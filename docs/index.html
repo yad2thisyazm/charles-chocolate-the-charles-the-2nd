@@ -7,7 +7,7 @@
 <meta name="description" content="A small, soft, slightly judgemental desktop cat who naps, kneads, chases butterflies, and closes your Reels tab after five minutes.">
 <meta property="og:title" content="Charles Chocolate the Charles the IInd">
 <meta property="og:description" content="A desktop cat who will close your Reels tab for you.">
-<meta property="og:image" content="img/coat-mochi.png">
+<meta property="og:image" content="img/demo-still.png">
 <link rel="icon" href="img/coat-mochi.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -76,12 +76,18 @@
   }
   .subtitle::before { left: -7px; } .subtitle::after { right: -7px; }
   .tagline { max-width: 640px; margin: 22px auto 0; font-size: 20px; }
-  .hero-stage { position: relative; margin: 8px auto 0; width: min(520px, 100%); }
-  .hero-stage img { display: block; margin: 0 auto; width: 100%; cursor: pointer; }
+  .hero-stage { position: relative; margin: 26px auto 22px; width: min(760px, 100%); }
+  .hero-stage .screen {
+    display: block; width: 100%; aspect-ratio: 960 / 640; border-radius: 18px; border: 3px solid var(--choc);
+    box-shadow: 0 8px 0 var(--choc); background: #f6e9dc; overflow: hidden;
+  }
+  .hero-stage .screen img { display: block; width: 100%; height: 100%; }
   .hero-stage .note {
-    position: absolute; right: -10px; top: 30%; font-size: 26px; transform: rotate(8deg);
+    position: absolute; right: -96px; top: 34%; font-size: 26px; transform: rotate(8deg); width: 120px; line-height: 1.1;
   }
   .hero-stage .note::before { content: "↙ "; }
+  .hero-stage figcaption { font-size: 14px; color: var(--choc-2); margin-top: 14px; }
+  .small-print { font-size: 14px; color: var(--choc-2); margin: 12px 0 0; }
   .buttons { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin: 6px 0 0; }
   .btn {
     display: inline-flex; align-items: center; gap: 8px; text-decoration: none; font-family: "Fredoka";
@@ -170,6 +176,26 @@
   .demo-btns { display: flex; gap: 12px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
   .demo-btns .btn { font-size: 18px; padding: 10px 18px; }
 
+  .knobs { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 20px; margin-top: 44px; }
+  .knob { background: var(--card); border: 3px solid var(--choc); border-radius: 20px; padding: 16px 18px; box-shadow: var(--shadow); }
+  .knob h3 { font-size: 21px; }
+  .knob p { margin: 6px 0 0; font-size: 16px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chips span { font-size: 14px; font-weight: 800; padding: 2px 10px; border-radius: 999px; background: var(--pink-2); border: 2px solid var(--choc); }
+  .chips span.on { background: var(--butter); }
+  .promise { margin-top: 24px; background: var(--mint); border: 3px solid var(--choc); border-radius: 20px; padding: 16px 20px; box-shadow: var(--shadow); }
+  .promise h3 { font-size: 22px; }
+  .promise p { margin: 6px 0 0; font-size: 16px; }
+
+  /* ---------- privacy */
+  .privacy { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 22px; }
+  .pcard { background: var(--card); border: 3px solid var(--choc); border-radius: 22px; padding: 18px 20px; box-shadow: var(--shadow); }
+  .pcard h3 { font-size: 23px; }
+  .pcard ul { margin: 10px 0 0; padding-left: 20px; font-size: 16px; }
+  .pcard li { margin-bottom: 6px; }
+  .pcard .big { font: 700 44px "Fredoka"; color: var(--choc); margin: 6px 0 0; }
+  .pcard p { font-size: 16px; margin: 6px 0 0; }
+
   /* ---------- wardrobe */
   .coats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 20px; }
   .coat { background: var(--card); border: 3px solid var(--choc); border-radius: 22px; padding: 10px 10px 14px; text-align: center; box-shadow: var(--shadow); cursor: pointer; transition: transform .2s; }
@@ -212,11 +238,13 @@
   .pop { position: fixed; pointer-events: none; z-index: 50; font: 700 18px "Fredoka"; color: var(--choc); animation: pop 1.1s ease-out forwards; }
   @keyframes pop { from { transform: translate(-50%, -50%) scale(.4); opacity: 1; } to { transform: translate(-50%, -150%) scale(1.1); opacity: 0; } }
 
+  @media (max-width: 1000px) { .hero-stage .note { display: none; } }
   @media (max-width: 760px) {
     body { font-size: 17px; }
     .reels { grid-template-columns: 1fr; }
     .demo { min-height: 500px; }
     .hero-stage .note { display: none; }
+    .btn { font-size: 18px; padding: 10px 18px; }
     .step { grid-template-columns: 1fr; }
     .badge { font-size: 12px; }
     .marquee { margin: 30px 0; }
@@ -257,14 +285,21 @@
     <p class="tagline">A small, soft, slightly judgemental cat who lives at the bottom of your screen.
       She naps. She kneads. She chases butterflies. And if you doom-scroll Reels for five minutes,
       <b>she walks over and closes the tab herself.</b></p>
-    <div class="hero-stage">
-      <img src="img/wave.png" alt="Charles sitting and waving hello" id="heroCat" title="pet me">
-      <span class="note scribble">that's her!!</span>
-    </div>
+    <figure class="hero-stage">
+      <div class="screen">
+        <picture>
+          <source srcset="img/demo.webp" type="image/webp">
+          <img src="img/demo.gif" width="960" height="640" alt="Demo: a reels timer counts up to 5:00 while Instagram Reels scrolls. Charles warns 'one more minute of reels...', says 'okay. that's enough reels.', runs over, jumps up onto the browser's tab strip, swats the Reels tab's close button, then lands and says 'go touch grass :3'.">
+        </picture>
+      </div>
+      <span class="note scribble">that's her, doing her job</span>
+      <figcaption>Sped up. Drawn by the same code that runs on your desktop.</figcaption>
+    </figure>
     <div class="buttons">
-      <a class="btn" href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/archive/refs/heads/main.zip">🧺 Adopt Charles</a>
+      <a class="btn" href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/releases/latest/download/Charles.exe">🧺 Download for Windows</a>
       <a class="btn alt" href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd">🐙 See her on GitHub</a>
     </div>
+    <p class="small-print">Free · Windows 10 &amp; 11 · no install, no account · <a href="#privacy">nothing leaves your computer</a></p>
   </div>
   <div class="runway" aria-hidden="true">
     <div class="walker"><img src="img/walk.png" alt=""></div>
@@ -353,6 +388,33 @@
         </div>
       </div>
     </div>
+
+    <div class="knobs">
+      <div class="knob">
+        <h3>⏱ Time limit</h3>
+        <p>How long you get before she steps in.</p>
+        <div class="chips"><span>2 min</span><span class="on">5 min</span><span>10 min</span><span>15 min</span><span>30 min</span></div>
+      </div>
+      <div class="knob">
+        <h3>📣 Warning</h3>
+        <p>How much notice she gives you first.</p>
+        <div class="chips"><span>30 sec</span><span class="on">1 min</span><span>2 min</span><span>none</span></div>
+      </div>
+      <div class="knob">
+        <h3>🐾 When time's up</h3>
+        <p>Close the tab, block scrolling in that window until you take a break, or just tell you off.</p>
+        <div class="chips"><span class="on">close</span><span>block</span><span>nag</span></div>
+      </div>
+    </div>
+    <p class="small-print" style="text-align:center">Right-click her → <b>Reels rules</b>. Highlighted = default.</p>
+
+    <div class="promise">
+      <h3>She never guesses</h3>
+      <p>Before she swats, she checks the address bar really says reels, that the tab she's aiming at is
+        the selected one and matches that page, and then checks the address bar <i>again</i> right before
+        pressing close. If she can't be sure, she closes nothing: she tells you she couldn't find the
+        reels tab safely and blocks scrolling there instead.</p>
+    </div>
   </div>
 </section>
 
@@ -406,31 +468,76 @@
   <div class="wrap">
     <div class="sec-head">
       <h2>Adopt Charles</h2>
-      <p>Windows 10 or 11, plus Python 3.10 or newer. Takes about a minute.</p>
+      <p>Windows 10 or 11. One file, no Python, no installer. Takes about ten seconds.</p>
     </div>
     <div class="steps">
       <div class="step"><div class="n">1</div><div>
         <h3>Get her</h3>
-        <p><a href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/archive/refs/heads/main.zip">Download the zip</a> and unzip it, or clone the repo:</p>
-        <pre><code>git clone https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd.git
-cd charles-chocolate-the-charles-the-2nd</code></pre>
+        <p><a href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/releases/latest/download/Charles.exe"><b>Download Charles.exe</b></a> and double-click it. She appears in the bottom
+          right of your screen and says hi.</p>
+        <p class="small-print">She isn't code-signed yet, so Windows may say <i>"Windows protected your PC"</i>.
+          Click <b>More info → Run anyway</b>. Rather build her yourself? It's all on
+          <a href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd">GitHub</a>.</p>
       </div></div>
       <div class="step"><div class="n">2</div><div>
-        <h3>Give her snacks</h3>
-        <p>She runs on Pillow (for drawing) and uiautomation (for reading your address bar):</p>
-        <pre><code>pip install -r requirements.txt</code></pre>
+        <h3>Make it your rule</h3>
+        <p>Right-click her → <b>Reels rules</b> to pick the time limit, the warning and what she does.
+          Tick <b>Start with Windows</b> to have her every morning.</p>
       </div></div>
       <div class="step"><div class="n">3</div><div>
-        <h3>Let her out</h3>
-        <pre><code>pythonw desk_cat.py</code></pre>
-        <p>She appears in the bottom right of your screen and says hi. To have her start with
-          Windows, put a shortcut in <code>shell:startup</code>.</p>
-      </div></div>
-      <div class="step"><div class="n">4</div><div>
         <h3>Test the Reels Rule</h3>
         <p>Right-click her → <b>Test the reels mission</b>. Then open any reel: she closes it after 20 seconds.</p>
       </div></div>
     </div>
+    <details style="max-width:760px; margin:24px auto 0">
+      <summary>Prefer running her from source?</summary>
+      <p>Needs Python 3.10 or newer.</p>
+      <pre><code>git clone https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd.git
+cd charles-chocolate-the-charles-the-2nd
+pip install -r requirements.txt
+pythonw desk_cat.py</code></pre>
+      <p style="margin-top:12px">She runs on Pillow (for drawing) and uiautomation (for reading your address bar).</p>
+    </details>
+  </div>
+</section>
+
+<section id="privacy">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>What she watches</h2>
+      <p>Charles keeps an eye on your browsing, so here's exactly what she sees and what she does with it.</p>
+    </div>
+    <div class="privacy">
+      <div class="pcard">
+        <h3>👀 What she looks at</h3>
+        <ul>
+          <li>The title and program name of the window in front (and the one under your mouse), once a second.</li>
+          <li>That browser's address bar text, to see if it's a reels page.</li>
+          <li><i>That</i> you scrolled, not what you scrolled past.</li>
+          <li>The browser's tab strip, only at the moment she closes a tab.</li>
+          <li>Your cursor, so her eyes can follow it.</li>
+        </ul>
+      </div>
+      <div class="pcard">
+        <h3>📦 What leaves your computer</h3>
+        <p class="big">Nothing.</p>
+        <p>No network connections at all: no analytics, no telemetry, no update checks. She keeps a reels
+          timer in memory and never stores URLs, titles or history. The only file she writes is her
+          settings (coat, size, reels rules).</p>
+      </div>
+      <div class="pcard">
+        <h3>🔑 What she needs</h3>
+        <ul>
+          <li><b>No admin rights.</b> She runs as you.</li>
+          <li><b>Windows UI Automation</b>, the accessibility API screen readers use, to read the address bar and press close.</li>
+          <li><b>Mouse &amp; keyboard hooks</b> to notice scrolling. She ignores every key except the scroll keys, and never records what you type.</li>
+          <li><b>One startup entry</b> in the registry, only if you tick <i>Start with Windows</i>.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="small-print" style="text-align:center">The full details are in the
+      <a href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd#privacy">README</a>,
+      and she's one Python file, so you can check every word.</p>
   </div>
 </section>
 
@@ -441,9 +548,11 @@ cd charles-chocolate-the-charles-the-2nd</code></pre>
       <details><summary>Why is she called Charles?</summary><p>She chose it. We don't ask questions.</p></details>
       <details><summary>What happened to Charles the Ist?</summary><p>Knocked a full glass of water onto a keyboard, looked directly at the camera, and quietly abdicated.</p></details>
       <details><summary>Is she made of chocolate?</summary><p>No. Please do not eat Charles.</p></details>
-      <details><summary>Does she spy on me?</summary><p>She reads your browser's address bar to see if it's a reels page, and that's it. Nothing ever leaves your computer. She's a cat, not a data broker.</p></details>
+      <details><summary>Does she spy on me?</summary><p>She reads your browser's address bar to see if it's a reels page, and that's it. Nothing ever leaves your computer. She's a cat, not a data broker. <a href="#privacy">Here's everything she looks at.</a></p></details>
       <details><summary>Which sites count as reels?</summary><p>Instagram Reels, YouTube Shorts, TikTok and Facebook Reels, in Chrome, Edge, Brave, Firefox, Opera, Vivaldi, Arc or Zen, plus the TikTok and Instagram desktop apps.</p></details>
       <details><summary>I just had the reel open, I wasn't scrolling. Does that count?</summary><p>Nope. Only active scrolling counts, and taking a break of over a minute resets the timer. She's strict, not unreasonable.</p></details>
+      <details><summary>What if she can't tell which tab is reels?</summary><p>Then she doesn't close anything. She tells you she couldn't find it safely and blocks scrolling in that window instead. Closing the wrong tab would be far worse than closing none.</p></details>
+      <details><summary>Five minutes is too strict / not strict enough.</summary><p>Right-click → <b>Reels rules</b>. Pick 2 to 30 minutes, how much warning you get, and whether she closes the tab, blocks scrolling or just tells you off.</p></details>
       <details><summary>Can I make her stop?</summary><p>Right-click → <b>Bye Charles</b>. She'll forgive you. Eventually.</p></details>
     </div>
   </div>
@@ -519,17 +628,6 @@ cd charles-chocolate-the-charles-the-2nd</code></pre>
       p.style.top = e.clientY + 'px';
       document.body.appendChild(p);
       setTimeout(function () { p.remove(); }, 1200);
-    });
-  })();
-
-  // petting the hero cat
-  (function () {
-    var img = document.getElementById('heroCat');
-    var moods = ['img/happy.png', 'img/knead.png', 'img/wave.png'];
-    var i = 0;
-    img.addEventListener('click', function () {
-      i = (i + 1) % moods.length;
-      img.src = moods[i];
     });
   })();
 

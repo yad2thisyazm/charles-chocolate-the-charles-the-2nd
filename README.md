@@ -1,14 +1,18 @@
 <div align="center">
 
-<img src="docs/img/wave.png" width="300" alt="Charles waving hello">
-
 # Charles Chocolate the Charles the IInd
 
 **A small, soft, slightly judgemental cat who lives on your Windows desktop.**
 She naps, she kneads, she chases butterflies, and if you scroll Reels for five
 whole minutes she will walk over and close the tab herself.
 
-[**Meet Charles →**](https://yad2thisyazm.github.io/charles-chocolate-the-charles-the-2nd/)
+<img src="docs/img/demo.gif" width="720" alt="Charles warns 'one more minute of reels', then runs over, jumps up onto the browser's tab strip and swats the Instagram Reels tab closed, then lands and says 'go touch grass :3'">
+
+<sub>Sped up. Rendered by her own drawing code (<code>tools/make_demo.py</code>) over a pretend browser.</sub>
+
+[**Download Charles.exe**](https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/releases/latest/download/Charles.exe) ·
+[**Meet Charles →**](https://yad2thisyazm.github.io/charles-chocolate-the-charles-the-2nd/) ·
+[Privacy](#privacy)
 
 </div>
 
@@ -35,6 +39,34 @@ YouTube Shorts, TikTok or Facebook Reels**:
 2. at **5:00** she runs over, jumps up, hangs off your browser tab and **swats it closed**.
 3. she lands, and says something like *"go touch grass :3"*.
 
+#### Make it your rule
+
+Right-click her → **Reels rules**:
+
+| Setting | Options | Default |
+|---|---|---|
+| Time limit | 2, 5, 10, 15 or 30 minutes | 5 minutes |
+| Warning | 30 seconds, 1 minute or 2 minutes before, or no warning | 1 minute before |
+| When time's up | **Close the tab**, **Block scrolling** (she sits by the window and swallows scroll-wheel and arrow / Page keys there until you've been away for a minute) or **Just tell me off** | Close the tab |
+
+Settings are saved to `desk_cat_settings.json` next to `desk_cat.py`, or
+`%APPDATA%\Charles Chocolate\settings.json` for the .exe. You can edit the file for
+any value the menu doesn't offer (e.g. `"limit_minutes": 7`).
+
+#### She never guesses
+
+Closing the wrong tab would be worse than closing none, so before she touches anything she
+checks that:
+
+- the browser's address bar really shows a reels URL (a page *titled* "reels" isn't enough),
+- the tab she's about to swat is the selected tab **and** its name matches the reels page,
+- the address bar *still* shows reels right before she presses close.
+
+If any of that can't be confirmed (an unusual browser, a page that won't expose its tabs,
+UI Automation unavailable), she **doesn't close anything**. She tells you she couldn't find the
+reels tab safely and blocks scrolling in that window instead. Desktop apps are only closed if
+the program itself is TikTok or Instagram, never because some other window's title mentions them.
+
 Fine print:
 
 - Only time spent **actively scrolling** counts (mouse wheel or arrow keys, at least once every 45 seconds).
@@ -44,7 +76,21 @@ Fine print:
 
 ## Install
 
-Charles is **Windows only** (10 or 11) and needs **Python 3.10+**.
+Charles is **Windows only** (10 or 11).
+
+### The easy way
+
+1. Download [**Charles.exe**](https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/releases/latest/download/Charles.exe).
+2. Double-click it. No Python, no installer, nothing else to set up.
+3. Right-click her → **Start with Windows** if you'd like her every morning.
+
+The .exe isn't code-signed, so Windows SmartScreen may say *"Windows protected your PC"*.
+Click **More info → Run anyway**. If you'd rather not trust a binary, build it yourself
+(below) or run from source.
+
+### From source
+
+Needs **Python 3.10+**.
 
 ```bash
 git clone https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd.git
@@ -53,8 +99,17 @@ pip install -r requirements.txt
 pythonw desk_cat.py
 ```
 
-`pythonw` runs her without a console window. To have her start with Windows, put a shortcut to
-`pythonw.exe desk_cat.py` in your Startup folder (`Win + R` → `shell:startup`).
+`pythonw` runs her without a console window. Right-click → **Start with Windows** works from
+source too.
+
+### Build the .exe yourself
+
+```bash
+pip install -r requirements.txt pyinstaller
+python tools/build_exe.py      # -> dist/Charles.exe
+```
+
+Pushing a `v*` tag runs the same build on GitHub Actions and attaches `Charles.exe` to a release.
 
 ## Using her
 
@@ -65,10 +120,10 @@ pythonw desk_cat.py
 | Left-click 5 times quickly | Leaves |
 | Drag | Dangles, then drops back onto the taskbar |
 | Drag and shake | Dizzy |
-| Right-click | Menu: reels timer, coat, size, test mission, quit |
+| Right-click | Menu: reels timer, reels rules, coat, size, start with Windows, test mission, quit |
 
 **Coats:** Mochi (white), Ash (grey), Midnight (black), Ginger, Cream, Blue.
-**Sizes:** Small, Medium, Large. Your choice is saved in `desk_cat_settings.json`.
+**Sizes:** Small, Medium, Large. Your choices are saved with the rest of her settings.
 
 ### Testing the Reels Rule
 
@@ -78,16 +133,59 @@ up a screen recording first and open reels after.
 
 You can also run `python desk_cat.py --test` to shrink the real timer to 20 seconds.
 
+## Privacy
+
+Charles watches what you're looking at, so here is exactly what she does with it.
+
+**What she looks at**
+
+| What | Why | How often |
+|---|---|---|
+| The title and program name of the focused window, and of the window under your mouse | To tell if it's a browser or the TikTok / Instagram app | Once a second |
+| The address bar text of that browser window | To tell if it's a reels page | Once a second, browsers only |
+| *That* you scrolled (mouse wheel, ↑ / ↓ keys), not where or what | Only *active* scrolling counts towards the limit | As it happens |
+| The browser's tab strip | To find the reels tab's close button | Only at the moment she intervenes |
+| Your cursor position | So her eyes can follow it, and for petting | Every frame |
+
+**What she keeps:** a reels timer in memory, reset when you take a break or quit. She never
+stores URLs, titles or history. The only thing written to disk is her settings file (coat,
+size, reels rules). The `uiautomation` library may write an `@AutomationLog.txt` next to her
+with technical errors only.
+
+**What leaves your computer:** nothing. Charles makes no network connections at all: no
+analytics, no telemetry, no update checks. It's one Python file, so you can check.
+
+**What permissions she needs:** none beyond a normal app. She runs as you, without admin
+rights. She uses:
+
+- **Windows UI Automation**, the accessibility API screen readers use, to read the address bar
+  and press the tab's close button.
+- **Low-level mouse and keyboard hooks**, to notice scrolling and, in block mode, to stop it.
+  Like any keyboard hook, Windows passes every key press through it. Hers ignores everything
+  except the scroll keys (↑ ↓ Page Up / Down, Home, End), and only *swallows* those when
+  you've chosen **Block scrolling** and the reels window is in front. She never records,
+  stores or sends what you type.
+- **A simulated Ctrl+W**, only as a fallback when the close button can't be pressed directly,
+  and only after re-confirming the reels window is in front and still on reels.
+- **One registry value** (`HKCU\...\CurrentVersion\Run\Charles Chocolate`), only if you tick
+  **Start with Windows**. Untick it to remove it.
+
+To remove her completely: quit, delete the .exe (or folder), and delete
+`%APPDATA%\Charles Chocolate` if you used the .exe.
+
 ## How she works
 
 It's one Python file. She's drawn from scratch every frame with Pillow (supersampled
 circles, rounded polygons and bezier "tubes"), and shown in a transparent, always-on-top
 layered window. A background thread uses Windows UI Automation to read the browser's
-address bar, and a low-level mouse hook notices when you scroll. When it's time, she finds
-the active tab's close button through UI Automation and presses it. If that fails, she
-falls back to <kbd>Ctrl</kbd>+<kbd>W</kbd>.
+address bar, and low-level mouse and keyboard hooks notice when you scroll (and can swallow
+it, in block mode). When it's time, she finds the active tab's close button through UI
+Automation, re-checks the address bar, and presses it. If the button won't press she falls
+back to <kbd>Ctrl</kbd>+<kbd>W</kbd>, re-checking first. If she can't be sure, she doesn't
+close anything (see [She never guesses](#she-never-guesses)).
 
-She never sends anything anywhere. Everything stays on your computer.
+The demo GIF is made by `tools/make_demo.py`, which drives her real code on a virtual clock
+over a pretend browser.
 
 ## Why "the IInd"?
 

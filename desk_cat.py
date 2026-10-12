@@ -6,8 +6,9 @@ Charles Chocolate the Charles the IInd - a soft little cat that lives on your de
   * Gently wiggle your cursor over her to pet her - she purrs.
   * Drag her around; she drops back onto the taskbar when you let go.
   * Spend more than 5 minutes scrolling Reels / Shorts / TikTok and she
-    marches over and closes the tab for you.
-  * Right-click for the menu (coat, size, status, test mission, quit).
+    marches over and closes the tab for you (or blocks scrolling, or just
+    tells you off - your choice).
+  * Right-click for the menu (reels rules, coat, size, test mission, quit).
 
 Run:   pythonw desk_cat.py          (no console window)
 Test:  python desk_cat.py --test    (limit drops to 20 seconds)
@@ -23,6 +24,7 @@ import sys
 import threading
 import time
 import tkinter as tk
+import winreg
 from ctypes import wintypes
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -34,15 +36,15 @@ except ImportError:
 
 # ---------------------------------------------------------------- settings
 TEST_MODE = "--test" in sys.argv
-REELS_LIMIT = 20 if TEST_MODE else 5 * 60      # seconds of reels before she intervenes
 TEST_LIMIT = 20       # "Test the reels mission": 20s of reels open, scrolling or not
 SCROLL_GRACE = 45     # counts as "scrolling" if you scrolled within this many seconds
 FORGET_AFTER = 60     # leave reels this long and the timer resets
 
 REEL_URLS = ("instagram.com/reels", "instagram.com/reel/", "youtube.com/shorts",
              "tiktok.com", "facebook.com/reel", "m.facebook.com/reel")
-REEL_TITLES = ("reels", "tiktok", "#shorts", "youtube shorts")
-REEL_APPS = ("tiktok", "instagram")  # desktop apps, matched on window title
+REEL_TITLES = ("reels", "tiktok", "#shorts", "youtube shorts")  # only if the URL can't be read
+REEL_EXES = ("tiktok.exe", "instagram.exe")  # desktop apps, matched on the program itself
+REEL_STORE_APPS = ("tiktok", "instagram")    # Store apps: exact window title in ApplicationFrameHost
 BROWSERS = {"chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe",
             "opera_gx.exe", "vivaldi.exe", "arc.exe", "zen.exe"}
 
@@ -68,8 +70,22 @@ COATS = {
     "Blue (grey-blue)": ("#9aa7b8", "#232833", "#efb0b8"),
 }
 SIZES = {"Small": 0.75, "Medium": 1.0, "Large": 1.3}
+LIMITS = {"2 minutes": 2, "5 minutes": 5, "10 minutes": 10, "15 minutes": 15, "30 minutes": 30}
+WARNINGS = {"30 seconds before": 30, "1 minute before": 60, "2 minutes before": 120, "No warning": 0}
+ACTIONS = {"Close the tab": "close", "Block scrolling": "block", "Just tell me off": "nag"}
+DEFAULTS = {"coat": "Mochi (white)", "size": "Medium",
+            "limit_minutes": 5, "warning_seconds": 60, "action": "close"}
 
-SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "desk_cat_settings.json")
+# Next to the script when run from source; in %APPDATA% for the packaged .exe
+# (a one-file exe unpacks into a temp folder that's wiped on exit).
+FROZEN = getattr(sys, "frozen", False)
+if FROZEN:
+    _dir = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "Charles Chocolate")
+    os.makedirs(_dir, exist_ok=True)
+    SETTINGS_FILE = os.path.join(_dir, "settings.json")
+else:
+    SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "desk_cat_settings.json")
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 # ---------------------------------------------------------------- win32
 user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -121,6 +137,7 @@ kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 
 WM_CLOSE = 0x0010
 VK_LBUTTON, VK_CONTROL, VK_MENU, VK_W, VK_UP, VK_DOWN = 0x01, 0x11, 0x12, 0x57, 0x26, 0x28
+SCROLL_KEYS = {0x21, 0x22, 0x23, 0x24, 0x26, 0x28}  # PgUp, PgDn, End, Home, Up, Down
 KEYUP = 0x0002
 
 
@@ -208,19 +225,28 @@ def bezier(pts, t):
 
 
 # ---------------------------------------------------------------- reels watcher
+def same_page(tab_name, title):
+    """Does a tab's name belong to the page the window title shows?"""
+    a, b = (tab_name or "").lower().strip()[:24], (title or "").lower()
+    return bool(a) and (b.startswith(a) or a in b)
+
+
 class ReelsWatcher:
     """Background thread: figures out if the focused window is a reels feed,
-    plus a mouse hook that notes when you scroll."""
+    plus mouse/keyboard hooks that note when you scroll (and can block it)."""
 
     def __init__(self):
         self.hwnd = None          # focused reels window, or None
         self.is_browser = False
+        self.sure = False         # True if we read the URL (or matched the app's exe)
         self.last_scroll = 0.0
         self.hook_ok = True
+        self.block_hwnd = None    # while set, scrolling in this reels window is swallowed
+        self.blocked_at = 0.0     # last time we swallowed a scroll
         self._edit_cache = {}
         self.jobs = queue.Queue()
         threading.Thread(target=self._watch, daemon=True).start()
-        threading.Thread(target=self._mouse_hook, daemon=True).start()
+        threading.Thread(target=self._hooks, daemon=True).start()
 
     def scrolling(self):
         if not self.hook_ok:
@@ -229,16 +255,35 @@ class ReelsWatcher:
             self.last_scroll = time.time()
         return time.time() - self.last_scroll < SCROLL_GRACE
 
-    def _mouse_hook(self):
-        def proc(n, w, l):
+    def _blocking(self, hwnd):
+        b = self.block_hwnd
+        return bool(b) and hwnd == b and self.hwnd == b
+
+    def _hooks(self):
+        def mouse(n, w, l):
             if n == 0 and w in (0x020A, 0x020E):  # wheel / horizontal wheel
                 self.last_scroll = time.time()
+                if self.block_hwnd:
+                    under = user32.GetAncestor(user32.WindowFromPoint(wintypes.POINT(*cursor_pos())), 2)
+                    if self._blocking(under):
+                        self.blocked_at = time.time()
+                        return 1
             return user32.CallNextHookEx(None, n, w, l)
 
-        self._proc = HOOKPROC(proc)
-        if not user32.SetWindowsHookExW(14, self._proc, kernel32.GetModuleHandleW(None), 0):
+        def keyboard(n, w, l):
+            if n == 0 and self.block_hwnd and w in (0x0100, 0x0104):  # WM_KEYDOWN / WM_SYSKEYDOWN
+                vk = ctypes.cast(l, ctypes.POINTER(wintypes.DWORD))[0]
+                if vk in SCROLL_KEYS and self._blocking(user32.GetForegroundWindow()):
+                    self.blocked_at = time.time()
+                    return 1
+            return user32.CallNextHookEx(None, n, w, l)
+
+        self._procs = HOOKPROC(mouse), HOOKPROC(keyboard)
+        mod = kernel32.GetModuleHandleW(None)
+        if not user32.SetWindowsHookExW(14, self._procs[0], mod, 0):  # WH_MOUSE_LL
             self.hook_ok = False
             return
+        user32.SetWindowsHookExW(13, self._procs[1], mod, 0)  # WH_KEYBOARD_LL
         msg = wintypes.MSG()
         while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
             pass
@@ -256,6 +301,10 @@ class ReelsWatcher:
             self._edit_cache.pop(hwnd, None)
             return ""
 
+    def url_is_reels(self, hwnd):
+        url = self._url(hwnd)
+        return any(u in url for u in REEL_URLS)
+
     def _check(self):
         # The focused window first; if that isn't reels (e.g. a screen recorder
         # grabbed focus), fall back to whatever window the mouse is over.
@@ -270,17 +319,20 @@ class ReelsWatcher:
         return hit
 
     def _classify(self, hwnd):
+        """(reels hwnd or None, is it a browser, are we sure)"""
         if not hwnd:
-            return None, False
+            return None, False, False
         title = window_title(hwnd).lower()
         exe = window_exe(hwnd)
         if exe in BROWSERS:
             url = self._url(hwnd)
-            hit = any(u in url for u in REEL_URLS) or any(t in title for t in REEL_TITLES)
-            return (hwnd if hit else None), True
-        if any(a in title for a in REEL_APPS) or any(a in exe for a in REEL_APPS):
-            return hwnd, False
-        return None, False
+            if url:  # trust the address bar over the title ("fishing reels - amazon")
+                return (hwnd if any(u in url for u in REEL_URLS) else None), True, True
+            hit = any(t in title for t in REEL_TITLES)
+            return (hwnd if hit else None), True, False
+        if exe in REEL_EXES or (exe == "applicationframehost.exe" and title.strip() in REEL_STORE_APPS):
+            return hwnd, False, True
+        return None, False, False
 
     # UI Automation objects belong to the watcher thread, so the cat hands it
     # jobs and picks up the result on a later frame.
@@ -290,12 +342,12 @@ class ReelsWatcher:
         return job
 
     def find_tab(self, hwnd):
-        """Screen position of the active tab's close (X) button, plus the button itself."""
-        if auto is None:
+        """The active tab's close (X) button and where it is on screen, or None if
+        we can't be sure which tab is showing the reels."""
+        if auto is None or not self.url_is_reels(hwnd):
             return None
         root = auto.ControlFromHandle(hwnd)
         title = window_title(hwnd)
-        best = None
         for strip, _ in auto.WalkControl(root, maxDepth=12):
             if strip.ControlTypeName != "TabControl":
                 continue
@@ -305,30 +357,38 @@ class ReelsWatcher:
                 try:
                     selected = tab.GetSelectionItemPattern().IsSelected
                 except Exception:
-                    selected = bool(tab.Name) and title.startswith(tab.Name[:30])
-                if not selected:
+                    selected = True  # no selection info: the name check below decides
+                if not selected or not same_page(tab.Name, title):
                     continue
-                r = tab.BoundingRectangle
-                best = {"x": r.right - 18, "y": (r.top + r.bottom) // 2, "button": None, "name": tab.Name}
                 for btn, _ in auto.WalkControl(tab, maxDepth=2):
-                    if btn.ControlTypeName == "ButtonControl":
-                        b = btn.BoundingRectangle
-                        if b.width() > 0:
-                            best.update(x=(b.left + b.right) // 2, y=(b.top + b.bottom) // 2, button=btn)
-                return best
-            break
-        return best
+                    b = btn.BoundingRectangle
+                    if btn.ControlTypeName == "ButtonControl" and b.width() > 0:
+                        return {"x": (b.left + b.right) // 2, "y": (b.top + b.bottom) // 2,
+                                "button": btn, "name": tab.Name}
+                return None  # right tab, but no close button we can press
+            return None
+        return None
 
-    def press_button(self, btn):
-        try:
-            btn.GetInvokePattern().Invoke()
-            return True
-        except Exception:
+    def close_tab(self, hwnd, btn):
+        """Close the reels tab, re-checking the address bar right before each attempt.
+        Returns "closed", "gone" (you'd already left) or "unsure" (didn't touch anything)."""
+        if not user32.IsWindow(hwnd) or not self.url_is_reels(hwnd):
+            return "gone"
+        if btn is not None:
             try:
-                btn.GetLegacyIAccessiblePattern().DoDefaultAction()
-                return True
+                if btn.Exists(0, 0):
+                    try:
+                        btn.GetInvokePattern().Invoke()
+                    except Exception:
+                        btn.GetLegacyIAccessiblePattern().DoDefaultAction()
+                    return "closed"
             except Exception:
-                return False
+                pass
+        # Keyboard fallback: only if that window is in front *and* still on reels.
+        if bring_to_front(hwnd) and self.url_is_reels(hwnd) and user32.GetForegroundWindow() == hwnd:
+            tap(VK_CONTROL); tap(VK_W); tap(VK_W, up=True); tap(VK_CONTROL, up=True)
+            return "closed"
+        return "unsure"
 
     def _watch(self):
         ctx = auto.UIAutomationInitializerInThread() if auto else None
@@ -350,7 +410,7 @@ class ReelsWatcher:
             if time.time() >= next_check:
                 next_check = time.time() + 1.0
                 try:
-                    self.hwnd, self.is_browser = self._check()
+                    self.hwnd, self.is_browser, self.sure = self._check()
                 except Exception:
                     self.hwnd = None
 
@@ -464,12 +524,14 @@ def heart(d, x, y, s, fill):
 # ---------------------------------------------------------------- the cat
 class Cat:
     def __init__(self):
-        self.settings = {"coat": "Mochi (white)", "size": "Medium"}
+        self.settings = dict(DEFAULTS)
         try:
             with open(SETTINGS_FILE) as f:
                 self.settings.update(json.load(f))
         except Exception:
             pass
+        if self.settings["action"] not in ACTIONS.values():
+            self.settings["action"] = DEFAULTS["action"]
 
         self.root = tk.Tk()
         self.root.overrideredirect(True)
@@ -559,33 +621,83 @@ class Cat:
     def build_menu(self):
         self.menu = tk.Menu(self.root, tearoff=0)
         self.menu.add_command(label="Reels timer: 0:00", state="disabled")
-        self.coat_var = tk.StringVar(value=self.settings["coat"])
-        self.size_var = tk.StringVar(value=self.settings["size"])
-        coats = tk.Menu(self.menu, tearoff=0)
-        for name in COATS:
-            coats.add_radiobutton(label=name, variable=self.coat_var, value=name, command=self.save_settings)
-        sizes = tk.Menu(self.menu, tearoff=0)
-        for name in SIZES:
-            sizes.add_radiobutton(label=name, variable=self.size_var, value=name, command=self.save_settings)
-        self.menu.add_cascade(label="Coat", menu=coats)
-        self.menu.add_cascade(label="Size", menu=sizes)
+        self.vars = {key: tk.StringVar(value=str(self.settings[key]))
+                     for key in ("coat", "size", "limit_minutes", "warning_seconds", "action")}
+
+        def submenu(key, options, cmd):
+            sub = tk.Menu(self.menu, tearoff=0)
+            for label, value in options.items():
+                sub.add_radiobutton(label=label, variable=self.vars[key], value=str(value),
+                                    command=lambda: cmd(key))
+            return sub
+
+        rules = tk.Menu(self.menu, tearoff=0)
+        rules.add_cascade(label="Time limit", menu=submenu("limit_minutes", LIMITS, self.set_rule))
+        rules.add_cascade(label="Warning", menu=submenu("warning_seconds", WARNINGS, self.set_rule))
+        rules.add_cascade(label="When time's up", menu=submenu("action", ACTIONS, self.set_rule))
+        self.menu.add_cascade(label="Reels rules", menu=rules)
+        self.menu.add_cascade(label="Coat", menu=submenu("coat", {n: n for n in COATS}, self.set_look))
+        self.menu.add_cascade(label="Size", menu=submenu("size", {n: n for n in SIZES}, self.set_look))
+        self.startup_var = tk.BooleanVar(value=self.starts_with_windows())
+        self.menu.add_checkbutton(label="Start with Windows", variable=self.startup_var,
+                                  command=self.toggle_startup)
         self.menu.add_command(label="Test the reels mission", command=self.test_mission)
         self.menu.add_separator()
         self.menu.add_command(label="Bye Charles (quit)", command=self.quit)
 
-    def save_settings(self):
-        size_changed = self.size_var.get() != self.settings["size"]
-        self.settings = {"coat": self.coat_var.get(), "size": self.size_var.get()}
-        if size_changed:
+    def set_look(self, key):
+        old_size = self.settings["size"]
+        self.settings[key] = self.vars[key].get()
+        if self.settings["size"] != old_size:
             bottom = self.y + self.H
             self.apply_size()
             self.y = bottom - self.H
+        self.save_settings()
+        self.say("how do I look?", 2)
+
+    def set_rule(self, key):
+        val = self.vars[key].get()
+        self.settings[key] = val if key == "action" else int(val)
+        self.save_settings()
+        self.unblock()
+        self.warned = False
+        lm, ws, act = (self.settings[k] for k in ("limit_minutes", "warning_seconds", "action"))
+        then = {"close": "I close it", "block": "no more scrolling", "nag": "I tell you off"}[act]
+        self.say(f"ok: {lm} min of reels, then {then}", 3.5)
+
+    def save_settings(self):
         try:
             with open(SETTINGS_FILE, "w") as f:
-                json.dump(self.settings, f)
+                json.dump(self.settings, f, indent=2)
         except Exception:
             pass
-        self.say("how do I look?", 2)
+
+    def startup_command(self):
+        if FROZEN:
+            return f'"{sys.executable}"'
+        pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+        return f'"{pyw if os.path.exists(pyw) else sys.executable}" "{os.path.abspath(__file__)}"'
+
+    def starts_with_windows(self):
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+                winreg.QueryValueEx(k, "Charles Chocolate")
+            return True
+        except OSError:
+            return False
+
+    def toggle_startup(self):
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+                if self.startup_var.get():
+                    winreg.SetValueEx(k, "Charles Chocolate", 0, winreg.REG_SZ, self.startup_command())
+                    self.say("see you every morning :3", 2.5)
+                else:
+                    winreg.DeleteValue(k, "Charles Chocolate")
+                    self.say("fine. call me when you need me.", 2.5)
+        except OSError:
+            self.startup_var.set(self.starts_with_windows())
+            self.say("hm, Windows said no", 2)
 
     def floor(self):
         return self.wa[3] - self.H + int((FOOT - 6) * self.s)
@@ -688,10 +800,20 @@ class Cat:
         self.reels_secs = 0
         self.away_secs = 0
         self.warned = False
+        self.unblock()
         self.say("ok, 20 seconds of reels and I'm coming for it", 4)
 
     def limit(self):
-        return TEST_LIMIT if self.testing else REELS_LIMIT
+        if self.testing or TEST_MODE:
+            return TEST_LIMIT
+        return max(1, int(self.settings["limit_minutes"])) * 60
+
+    def warn_at(self):
+        limit = self.limit()
+        if self.testing or TEST_MODE:
+            return limit - 10
+        warn = int(self.settings["warning_seconds"])
+        return limit - warn if 0 < warn < limit else None
 
     def quit(self):
         self.root.destroy()
@@ -708,15 +830,60 @@ class Cat:
             if self.away_secs > FORGET_AFTER:
                 self.reels_secs = 0
                 self.warned = False
+                self.unblock()
 
-        if self.state.startswith("mission") or self.state == "held":
+        if self.watcher.block_hwnd and time.time() - self.watcher.blocked_at < 0.2 and \
+                time.time() > self.bubble_until and not self.state.startswith("mission"):
+            self.say(random.choice(["nope.", "no more scrolling.", "I said no.", "*sits on scroll wheel*"]), 2)
+            self.set_state("angry", 1.5)
+
+        if self.state.startswith("mission") or self.state == "held" or self.watcher.block_hwnd:
             return
-        limit = self.limit()
-        if not self.warned and self.reels_secs >= limit - (10 if limit <= 60 else 60) and hwnd:
+        warn_at = self.warn_at()
+        if not self.warned and warn_at is not None and self.reels_secs >= warn_at and hwnd:
             self.warned = True
-            self.say("10 more seconds..." if limit <= 60 else "one more minute of reels...", 4)
-        if self.reels_secs >= limit and hwnd:
+            left = self.limit() - warn_at
+            self.say(f"{left} more seconds..." if left < 60 else
+                     "one more minute of reels..." if left == 60 else f"{left // 60} more minutes of reels...", 4)
+        if self.reels_secs >= self.limit() and hwnd:
+            self.intervene(hwnd)
+
+    def intervene(self, hwnd):
+        action = "close" if self.testing else self.settings["action"]
+        if action == "nag":
+            self.reels_secs = 0
+            self.warned = False
+            self.say(random.choice(["that's enough reels.", "go touch grass :3", "time's up, scroller."]), 4)
+            self.set_state("angry", 3)
+        elif action == "block":
+            self.block(hwnd, "that's enough. no more scrolling.")
+        elif self.watcher.is_browser and not self.watcher.sure:
+            # Couldn't read the address bar, so we can't tell which tab is reels.
+            self.cant_close(hwnd)
+        else:
             self.start_mission(hwnd, self.watcher.is_browser)
+
+    def block(self, hwnd, line):
+        self.watcher.block_hwnd = hwnd
+        self.testing = False
+        self.say(line, 4)
+        l, t, r, b = window_rect(hwnd)
+        lo, hi = self.wa[0], self.wa[2] - self.W
+        self.walk_to(min(max((l + r) / 2 - self.W / 2, lo), hi), speed=7, state="storm")
+
+    def unblock(self):
+        self.watcher.block_hwnd = None
+
+    def cant_close(self, hwnd):
+        """Graceful failure: never guess. Block scrolling there instead and say why."""
+        self.mission_hwnd = None
+        self.reels_secs = 0
+        if hwnd and user32.IsWindow(hwnd):
+            self.block(hwnd, "I can't tell which tab is the reels one, so I won't close anything. "
+                             "no more scrolling though.")
+        else:
+            self.say("I couldn't find the reels to close. please close it yourself!", 5)
+            self.set_state("angry", 3)
 
     def start_mission(self, hwnd, is_browser):
         self.mission_hwnd, self.mission_browser = hwnd, is_browser
@@ -726,18 +893,20 @@ class Cat:
         self.set_state("mission_prep", 3.5)
 
     def plan_jump(self):
-        """Work out where the tab's X is and run underneath it."""
+        """Work out where the tab's X is and run underneath it.
+        Returns False (and backs off) if we couldn't find the exact tab."""
         hwnd = self.mission_hwnd
         l, t, r, b = window_rect(hwnd)
         found = self.job["result"] if self.job and self.job["done"] else None
+        self.job = None
         if found:
             px, py = found["x"], found["y"]
             self.mission_btn = found["button"]
         elif self.mission_browser:
-            px, py = l + 260, max(t, 0) + 22      # roughly where the active tab sits
+            self.cant_close(hwnd)
+            return
         else:
             px, py = r - 24, max(t, 0) + 16       # the app's own close button
-        self.job = None
         cxw = self.x + self.W / 2
         self.facing = 1 if px >= cxw else -1
         hx = px - self.W / 2 - PAW[0] * self.s * self.facing
@@ -761,23 +930,12 @@ class Cat:
             self.set_state("mission_letgo", 0.4)
             return
         self.testing = False
-        if self.mission_btn is not None:
-            self.job = self.watcher.submit(self.watcher.press_button, self.mission_btn)
-            self.set_state("mission_closing", 2)
-            return
-        self.close_fallback()
-
-    def close_fallback(self):
-        hwnd = self.mission_hwnd
         if self.mission_browser:
-            if bring_to_front(hwnd):
-                tap(VK_CONTROL); tap(VK_W); tap(VK_W, up=True); tap(VK_CONTROL, up=True)
-                self.land_msg = random.choice(DONE_LINES)
-            else:
-                self.land_msg = "hmph. you escaped this time."
-        else:
-            user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
-            self.land_msg = random.choice(DONE_LINES)
+            self.job = self.watcher.submit(self.watcher.close_tab, hwnd, self.mission_btn)
+            self.set_state("mission_closing", 6)
+            return
+        user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+        self.land_msg = random.choice(DONE_LINES)
         self.set_state("mission_letgo", 0.5)
 
     def end_mission(self):
@@ -818,7 +976,8 @@ class Cat:
                 elif st == "storm":
                     self.pose = "sit"
                     self.set_state("angry", 3)
-                    self.say("hmph.", 3)
+                    if now > self.bubble_until:
+                        self.say("hmph.", 3)
                 else:
                     self.pose = random.choice(["sit", "stand"])
                     self.set_state("idle", random.uniform(4, 9))
@@ -852,17 +1011,17 @@ class Cat:
         elif st == "mission_swipe" and now > self.state_until:
             self.close_target()
         elif st == "mission_closing":
-            if self.job and self.job["done"]:
-                ok = self.job["result"]
+            result = self.job["result"] if self.job and self.job["done"] else None
+            if result or now > self.state_until:
                 self.job = None
-                if ok:
+                if result == "closed":
                     self.land_msg = random.choice(DONE_LINES)
-                    self.set_state("mission_letgo", 0.5)
-                else:
-                    self.close_fallback()
-            elif now > self.state_until:
-                self.job = None
-                self.close_fallback()
+                elif result == "gone":
+                    self.land_msg = "oh, you stopped? ...good."
+                else:  # couldn't verify the tab, so nothing was closed
+                    self.watcher.block_hwnd = self.mission_hwnd
+                    self.land_msg = "I couldn't close it safely, so no more scrolling there instead."
+                self.set_state("mission_letgo", 0.5)
         elif st == "mission_letgo" and now > self.state_until:
             self.end_mission()
 
