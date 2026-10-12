@@ -82,11 +82,25 @@ Charles is **Windows only** (10 or 11).
 
 1. Download [**Charles.exe**](https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/releases/latest/download/Charles.exe).
 2. Double-click it. No Python, no installer, nothing else to set up.
-3. Right-click her → **Start with Windows** if you'd like her every morning.
+3. The first time, she shows you a short tour, with buttons to put her icon on your desktop
+   and to start her with Windows. (Right-click her → **How I work** to see it again.)
 
 The .exe isn't code-signed, so Windows SmartScreen may say *"Windows protected your PC"*.
 Click **More info → Run anyway**. If you'd rather not trust a binary, build it yourself
 (below) or run from source.
+
+### Updating
+
+Download the new `Charles.exe` and open it. The Charles who's already running steps aside for
+the new one, and her desktop icon and **Start with Windows** follow the new copy. Your coat,
+size and reels rules are kept. Then you can delete the old .exe.
+
+Coming from v1.0.0? That version doesn't know how to step aside, so right-click it →
+**Bye Charles (quit)** first.
+
+Charles doesn't check for updates herself (she makes no network connections), so watch the
+[releases page](https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/releases)
+if you'd like to know.
 
 ### From source
 
@@ -120,7 +134,7 @@ Pushing a `v*` tag runs the same build on GitHub Actions and attaches `Charles.e
 | Left-click 5 times quickly | Leaves |
 | Drag | Dangles, then drops back onto the taskbar |
 | Drag and shake | Dizzy |
-| Right-click | Menu: reels timer, reels rules, coat, size, start with Windows, test mission, quit |
+| Right-click | Menu: reels timer, reels rules, coat, size, start with Windows, desktop icon, how I work, test mission, quit |
 
 **Coats:** Mochi (white), Ash (grey), Midnight (black), Ginger, Cream, Blue.
 **Sizes:** Small, Medium, Large. Your choices are saved with the rest of her settings.
@@ -170,9 +184,11 @@ rights. She uses:
   and only after re-confirming the reels window is in front and still on reels.
 - **One registry value** (`HKCU\...\CurrentVersion\Run\Charles Chocolate`), only if you tick
   **Start with Windows**. Untick it to remove it.
+- **A desktop shortcut**, only if you ask for one (in her first-run tour, or right-click →
+  **Desktop icon**). Untick it to remove it.
 
-To remove her completely: quit, delete the .exe (or folder), and delete
-`%APPDATA%\Charles Chocolate` if you used the .exe.
+To remove her completely: untick **Start with Windows** and **Desktop icon**, quit, delete the
+.exe (or folder), and delete `%APPDATA%\Charles Chocolate`.
 
 ## How she works
 

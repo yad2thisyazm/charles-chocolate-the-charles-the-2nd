@@ -28,7 +28,7 @@ import winreg
 from ctypes import wintypes
 from urllib.parse import urlsplit
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 try:
     import uiautomation as auto  # reads the browser address bar
@@ -74,17 +74,20 @@ LIMITS = {"2 minutes": 2, "5 minutes": 5, "10 minutes": 10, "15 minutes": 15, "3
 WARNINGS = {"30 seconds before": 30, "1 minute before": 60, "2 minutes before": 120, "No warning": 0}
 ACTIONS = {"Close the tab": "close", "Block scrolling": "block", "Just tell me off": "nag"}
 DEFAULTS = {"coat": "Mochi (white)", "size": "Medium",
-            "limit_minutes": 5, "warning_seconds": 60, "action": "close"}
+            "limit_minutes": 5, "warning_seconds": 60, "action": "close", "welcomed": False}
+APP_NAME = "Charles Chocolate the Charles the 2nd"  # what the desktop icon is called
 
-# Next to the script when run from source; in %APPDATA% for the packaged .exe
-# (a one-file exe unpacks into a temp folder that's wiped on exit).
+# Settings live next to the script when run from source; in %APPDATA% for the packaged
+# .exe (a one-file exe unpacks into a temp folder that's wiped on exit).
 FROZEN = getattr(sys, "frozen", False)
+DATA_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "Charles Chocolate")
 if FROZEN:
-    _dir = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "Charles Chocolate")
-    os.makedirs(_dir, exist_ok=True)
-    SETTINGS_FILE = os.path.join(_dir, "settings.json")
+    os.makedirs(DATA_DIR, exist_ok=True)
+    SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
+    ASSETS = os.path.join(getattr(sys, "_MEIPASS", ""), "img")
 else:
     SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "desk_cat_settings.json")
+    ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "docs", "img")
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 # ---------------------------------------------------------------- win32
@@ -142,6 +145,13 @@ user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
 user32.MonitorFromPoint.restype = wintypes.HMONITOR
 kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
 kernel32.CreateMutexW.restype = wintypes.HANDLE
+kernel32.CreateEventW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR]
+kernel32.CreateEventW.restype = wintypes.HANDLE
+kernel32.SetEvent.argtypes = kernel32.ResetEvent.argtypes = [wintypes.HANDLE]
+kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+kernel32.WaitForSingleObject.restype = wintypes.DWORD
+shell32 = ctypes.WinDLL("shell32")
+shell32.SHGetFolderPathW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR]
 try:
     UI_SCALE = user32.GetDpiForSystem() / 96  # display scaling (150% -> 1.5)
 except Exception:
@@ -264,6 +274,125 @@ def bezier(pts, t):
     while len(pts) > 1:
         pts = [(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t) for a, b in zip(pts, pts[1:])]
     return pts[0]
+
+
+# ---------------------------------------------------------------- her home: startup, desktop icon
+QUIT_EVENT = None  # set by another Charles starting up (a newer .exe, say): time to go
+
+
+def claim_single_instance():
+    """One Charles at a time. Opening her again asks the one already running to leave
+    and takes over, so running a freshly downloaded Charles.exe is all an update needs."""
+    global QUIT_EVENT
+    mutex = kernel32.CreateMutexW(None, True, "Local\\CharlesChocolate.running")
+    already = ctypes.get_last_error() == 183  # ERROR_ALREADY_EXISTS
+    QUIT_EVENT = kernel32.CreateEventW(None, False, False, "Local\\CharlesChocolate.quit")
+    if already:
+        kernel32.SetEvent(QUIT_EVENT)
+        if kernel32.WaitForSingleObject(mutex, 8000) not in (0, 0x80):  # ours, or she quit
+            sys.exit(0)  # the other one didn't leave; don't run two
+        kernel32.ResetEvent(QUIT_EVENT)
+    return mutex
+
+
+def launch_command():
+    """(program, arguments) that start her: the .exe, or pythonw + this script."""
+    if FROZEN:
+        return sys.executable, ""
+    pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+    return (pyw if os.path.exists(pyw) else sys.executable), f'"{os.path.abspath(__file__)}"'
+
+
+def startup_command():
+    exe, args = launch_command()
+    return f'"{exe}" {args}'.strip()
+
+
+def in_startup():
+    """Is she in the Run key? Points it here if what it points at has moved, or (for the
+    .exe) if this is a different copy, so a newer download takes over."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
+                            winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE) as k:
+            cmd, _ = winreg.QueryValueEx(k, "Charles Chocolate")
+            stale = not all(os.path.exists(path) for path in str(cmd).split('"')[1::2])
+            if stale or (FROZEN and str(cmd) != startup_command()):
+                winreg.SetValueEx(k, "Charles Chocolate", 0, winreg.REG_SZ, startup_command())
+        return True
+    except OSError:
+        return False
+
+
+def set_startup(on):
+    """Returns False if Windows wouldn't let us."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+            if on:
+                winreg.SetValueEx(k, "Charles Chocolate", 0, winreg.REG_SZ, startup_command())
+            else:
+                winreg.DeleteValue(k, "Charles Chocolate")
+        return True
+    except OSError:
+        return on is False and not in_startup()
+
+
+def desktop_icon_path():
+    buf = ctypes.create_unicode_buffer(260)
+    shell32.SHGetFolderPathW(None, 0x10, None, 0, buf)  # CSIDL_DESKTOPDIRECTORY (follows OneDrive)
+    return os.path.join(buf.value or os.path.join(os.path.expanduser("~"), "Desktop"), APP_NAME + ".lnk")
+
+
+def _wscript_shell():
+    import comtypes.client
+    return comtypes.client.CreateObject("WScript.Shell", dynamic=True)
+
+
+def icon_file():
+    """The .exe carries her icon; from source, draw one into her data folder."""
+    if FROZEN:
+        return sys.executable
+    path = os.path.join(DATA_DIR, "charles.ico")
+    if not os.path.exists(path):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        portrait(256).save(path, sizes=[(n, n) for n in (16, 20, 24, 32, 40, 48, 64, 128, 256)])
+    return path
+
+
+def has_desktop_icon():
+    return os.path.exists(desktop_icon_path())
+
+
+def set_desktop_icon(on):
+    """Adds or removes her desktop icon. Returns False if that didn't work."""
+    path = desktop_icon_path()
+    try:
+        if not on:
+            if os.path.exists(path):
+                os.remove(path)
+            return True
+        exe, args = launch_command()
+        link = _wscript_shell().CreateShortcut(path)
+        link.TargetPath = exe
+        link.Arguments = args
+        link.WorkingDirectory = os.path.dirname(os.path.abspath(sys.argv[0]))
+        link.IconLocation = icon_file() + ",0"
+        link.Description = "A small, soft, slightly judgemental cat for your desktop"
+        link.Save()
+        return True
+    except Exception:
+        return False
+
+
+def follow_this_exe():
+    """A newer Charles.exe was opened from somewhere else: point her desktop icon at it."""
+    if not FROZEN or not has_desktop_icon():
+        return
+    try:
+        target = _wscript_shell().CreateShortcut(desktop_icon_path()).TargetPath
+    except Exception:
+        return
+    if os.path.normcase(str(target)) != os.path.normcase(sys.executable):
+        set_desktop_icon(True)
 
 
 # ---------------------------------------------------------------- reels watcher
@@ -626,6 +755,76 @@ def heart(d, x, y, s, fill):
     d.polygon([(x - s, y - s * 0.45), (x + s, y - s * 0.45), (x, y + s)], fill=fill)
 
 
+def portrait(n, coat="Mochi (white)", tile="#f7a8c4"):
+    """Her face on a soft rounded tile, n pixels square: her icon."""
+    fur, ink, blush = COATS[coat]
+    w = n * 4
+    img = Image.new("RGBA", (w, w), (0, 0, 0, 0))
+    ImageDraw.Draw(img).rounded_rectangle((0, 0, w - 1, w - 1), radius=int(w * 0.24), fill=tile)
+    cat = Image.new("RGBA", (w, w), (0, 0, 0, 0))
+    k = n / 112
+    P = Painter(cat, k * 4 / SS, 1, (n / 2 - 9 * k) * 4 / SS, n * 0.72 * 4 / SS)
+    hx, hy = 0, -38
+    for g, col in ((1.4, shade(fur, 0.8)), (0.0, fur)):
+        P.g, P.col = g, col
+        P.ellipse(hx - 2, hy + 66, 50, 36)  # shoulders, running off the bottom
+        P.ellipse(hx, hy, 33, 29)
+        P.ears(hx, hy)
+    P.inner_ears(mix(fur, blush, 0.75))
+    ex1, ex2, ey, mx = hx + 5, hx + 23, hy + 1, hx + 14
+    for ex in (ex1, ex2):
+        P.ellipse(ex, ey, 5.6, 6.3, ink)
+        P.ellipse(ex + 1.7, ey - 1.9, 2.1, 2.1, "#ffffff" if ink[1:3] < "80" else "#2b2926")
+    for ex in (ex1 - 5, ex2 + 5):
+        P.ellipse(ex, ey + 7.5, 4.6, 2.8, mix(fur, blush, 0.8))
+    P.ellipse(mx, ey + 4.4, 2.2, 1.5, mix(blush, ink, 0.25))
+    P.arc(mx - 2.2, ey + 6.2, 2.2, 10, 170, 1.5, ink)
+    P.arc(mx + 2.2, ey + 6.2, 2.2, 10, 170, 1.5, ink)
+    cat.putalpha(ImageChops.multiply(cat.getchannel("A"), img.getchannel("A")))  # clip to the tile
+    img.alpha_composite(cat)
+    return img.resize((n, n), Image.LANCZOS)
+
+
+def to_bgra(img, reduce=1):
+    """RGBA image -> premultiplied BGRA bytes, the way a layered window wants them."""
+    out = img.convert("RGBa")
+    if reduce > 1:
+        out = out.reduce(reduce)
+    r, g, b, a = out.split()
+    return Image.merge("RGBA", (b, g, r, a)).tobytes()
+
+
+class Surface:
+    """A window with per-pixel transparency that we paint whole frames into."""
+
+    def __init__(self, hwnd):
+        self.hwnd = hwnd
+        ex = user32.GetWindowLongW(hwnd, -20)
+        user32.SetWindowLongW(hwnd, -20, ex | 0x80000)  # WS_EX_LAYERED
+        self.screen_dc = user32.GetDC(None)
+        self.mem_dc = gdi32.CreateCompatibleDC(self.screen_dc)
+        self.dib = None
+        self.w = self.h = 0
+
+    def resize(self, w, h):
+        bmi = BITMAPINFOHEADER(40, w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
+        bits = ctypes.c_void_p()
+        dib = gdi32.CreateDIBSection(self.mem_dc, ctypes.byref(bmi), 0, ctypes.byref(bits), None, 0)
+        gdi32.SelectObject(self.mem_dc, dib)
+        if self.dib:
+            gdi32.DeleteObject(self.dib)
+        self.dib, self.bits, self.w, self.h = dib, bits, w, h
+
+    def show(self, data, x, y, alpha=255):
+        ctypes.memmove(self.bits, data, len(data))
+        blend = BLENDFUNCTION(0, 0, alpha, 1)
+        pos = wintypes.POINT(int(x), int(y))
+        size = wintypes.SIZE(self.w, self.h)
+        src = wintypes.POINT(0, 0)
+        user32.UpdateLayeredWindow(self.hwnd, self.screen_dc, ctypes.byref(pos), ctypes.byref(size),
+                                   self.mem_dc, ctypes.byref(src), 0, ctypes.byref(blend), 2)
+
+
 # ---------------------------------------------------------------- the cat
 def load_settings():
     """Saved settings, plus the names of any that were invalid. People hand-edit the
@@ -645,6 +844,8 @@ def load_settings():
     for key, value in saved.items():
         if key in choices:
             ok = isinstance(value, str) and value in choices[key]
+        elif key == "welcomed":
+            ok = isinstance(value, bool)
         elif key in ranges:
             try:
                 ok = not isinstance(value, bool) and value == int(value) and \
@@ -670,12 +871,8 @@ class Cat:
         self.root.attributes("-topmost", True)
         self.root.update_idletasks()
         self.hwnd = int(self.root.wm_frame(), 16)
-        ex = user32.GetWindowLongW(self.hwnd, -20)
-        user32.SetWindowLongW(self.hwnd, -20, ex | 0x80000 | 0x80)  # LAYERED | TOOLWINDOW
-
-        self.screen_dc = user32.GetDC(None)
-        self.mem_dc = gdi32.CreateCompatibleDC(self.screen_dc)
-        self.dib = None
+        self.surface = Surface(self.hwnd)
+        user32.SetWindowLongW(self.hwnd, -20, user32.GetWindowLongW(self.hwnd, -20) | 0x80)  # TOOLWINDOW
         self.apply_size()
 
         self.wa = work_area()
@@ -714,6 +911,7 @@ class Cat:
         self.init_anim()
 
         self.drag = None
+        self.welcome = None
         self.root.bind("<ButtonPress-1>", self.on_press)
         self.root.bind("<B1-Motion>", self.on_drag)
         self.root.bind("<ButtonRelease-1>", self.on_release)
@@ -723,9 +921,14 @@ class Cat:
         self.root.geometry(f"{self.W}x{self.H}+{int(self.x)}+{int(self.y)}")
         if bad:
             self.say(f"mrrp! (my settings file had a typo in {', '.join(bad)}, so I used the default)", 7)
+        elif not self.settings["welcomed"]:
+            self.say("oh! a new human. read this pls :3", 5)
         else:
             self.say("mrrp! hi :3", 3)
         self.set_state("wave", 2.6)
+        if not self.settings["welcomed"]:
+            self.root.after(700, self.show_welcome)
+        self.root.after(2000, follow_this_exe)
         self.loop()
 
     def init_anim(self):
@@ -745,13 +948,7 @@ class Cat:
         self.W, self.H = int(280 * self.s), int(230 * self.s)
         self.font = ImageFont.truetype("segoeuib.ttf", int(13 * self.s * SS))
         self.zfont = ImageFont.truetype("segoeuib.ttf", int(12 * self.s * SS))
-        bmi = BITMAPINFOHEADER(40, self.W, -self.H, 1, 32, 0, 0, 0, 0, 0, 0)
-        bits = ctypes.c_void_p()
-        dib = gdi32.CreateDIBSection(self.mem_dc, ctypes.byref(bmi), 0, ctypes.byref(bits), None, 0)
-        gdi32.SelectObject(self.mem_dc, dib)
-        if self.dib:
-            gdi32.DeleteObject(self.dib)
-        self.dib, self.bits = dib, bits
+        self.surface.resize(self.W, self.H)
         self.root.geometry(f"{self.W}x{self.H}")
 
     def build_menu(self):
@@ -774,9 +971,13 @@ class Cat:
         self.menu.add_cascade(label="Reels rules", menu=rules)
         self.menu.add_cascade(label="Coat", menu=submenu("coat", {n: n for n in COATS}, self.set_look))
         self.menu.add_cascade(label="Size", menu=submenu("size", {n: n for n in SIZES}, self.set_look))
-        self.startup_var = tk.BooleanVar(value=self.starts_with_windows())
+        self.startup_var = tk.BooleanVar(value=in_startup())
         self.menu.add_checkbutton(label="Start with Windows", variable=self.startup_var,
                                   command=self.toggle_startup)
+        self.desktop_var = tk.BooleanVar(value=has_desktop_icon())
+        self.menu.add_checkbutton(label="Desktop icon", variable=self.desktop_var,
+                                  command=self.toggle_desktop_icon)
+        self.menu.add_command(label="How I work", command=self.show_welcome)
         self.menu.add_command(label="Test the reels mission", command=self.test_mission)
         self.menu.add_separator()
         self.menu.add_command(label="Bye Charles (quit)", command=self.quit)
@@ -808,36 +1009,35 @@ class Cat:
         except Exception:
             pass
 
-    def startup_command(self):
-        if FROZEN:
-            return f'"{sys.executable}"'
-        pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
-        return f'"{pyw if os.path.exists(pyw) else sys.executable}" "{os.path.abspath(__file__)}"'
-
-    def starts_with_windows(self):
-        """Is she in the Run key? If the .exe or script it points at has moved, point it here."""
-        try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
-                                winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE) as k:
-                cmd, _ = winreg.QueryValueEx(k, "Charles Chocolate")
-                if not all(os.path.exists(path) for path in str(cmd).split('"')[1::2]):
-                    winreg.SetValueEx(k, "Charles Chocolate", 0, winreg.REG_SZ, self.startup_command())
-            return True
-        except OSError:
-            return False
-
-    def toggle_startup(self):
-        try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
-                if self.startup_var.get():
-                    winreg.SetValueEx(k, "Charles Chocolate", 0, winreg.REG_SZ, self.startup_command())
-                    self.say("see you every morning :3", 2.5)
-                else:
-                    winreg.DeleteValue(k, "Charles Chocolate")
-                    self.say("fine. call me when you need me.", 2.5)
-        except OSError:
-            self.startup_var.set(self.starts_with_windows())
+    def toggle_startup(self, on=None):
+        on = self.startup_var.get() if on is None else on
+        if set_startup(on):
+            self.say("see you every morning :3" if on else "fine. call me when you need me.", 2.5)
+        else:
             self.say("hm, Windows said no", 2)
+        self.startup_var.set(in_startup())
+
+    def toggle_desktop_icon(self, on=None):
+        on = self.desktop_var.get() if on is None else on
+        if set_desktop_icon(on):
+            self.say("look, it's me! on your desktop!" if on else "ok, no more desktop me.", 2.5)
+        else:
+            self.say("hm, Windows said no", 2)
+        self.desktop_var.set(has_desktop_icon())
+
+    def show_welcome(self):
+        if self.welcome is None:
+            self.welcome = Welcome(self)
+
+    def welcome_closed(self):
+        self.welcome = None
+        if not self.settings["welcomed"]:
+            self.settings["welcomed"] = True
+            self.save_settings()
+        if self.state in ("idle", "sleep", "wave", "knead", "happy"):
+            self.pose = "sit"
+            self.say("ok! let's be friends :3", 3)
+            self.set_state("wave", 2.4)
 
     def screen_under(self):
         """Work area of the monitor her feet are on."""
@@ -1560,9 +1760,7 @@ class Cat:
         if self.bubble and now < self.bubble_until:
             self.draw_bubble(d, self.bubble, hpx, hpy - 36 * k, "#2b2926")
 
-        out = frame.convert("RGBa").reduce(SS)
-        r, g, b, a = out.split()
-        return Image.merge("RGBA", (b, g, r, a)).tobytes()
+        return to_bgra(frame, SS)
 
     def draw_bubble(self, d, text, ax, ay, ink):
         k = self.s * SS
@@ -1594,16 +1792,12 @@ class Cat:
                          spacing=2 * k, align="center")
 
     def present(self, data):
-        ctypes.memmove(self.bits, data, len(data))
-        blend = BLENDFUNCTION(0, 0, 255, 1)
-        pos = wintypes.POINT(int(self.x), int(self.y))
-        size = wintypes.SIZE(self.W, self.H)
-        src = wintypes.POINT(0, 0)
-        user32.UpdateLayeredWindow(self.hwnd, self.screen_dc, ctypes.byref(pos), ctypes.byref(size),
-                                   self.mem_dc, ctypes.byref(src), 0, ctypes.byref(blend), 2)
+        self.surface.show(data, self.x, self.y)
 
     # ---------------- main loop
     def loop(self):
+        if QUIT_EVENT and kernel32.WaitForSingleObject(QUIT_EVENT, 0) == 0:
+            self.quit()  # another Charles (probably a newer one) is taking over
         now = time.time()
         dt = now - self.last_tick
         self.last_tick = now
@@ -1628,9 +1822,364 @@ class Cat:
         return 100 if self.state == "sleep" else 66
 
 
+# ---------------------------------------------------------------- first-run tutorial
+class Welcome:
+    """The tutorial she shows the first time: what she does, the reels rule, and buttons for
+    a desktop icon and starting with Windows. Drawn with Pillow into a layered window, like her."""
+
+    W, H, M = 640, 480, 28        # logical size, and the margin the card's soft shadow sits in
+    R = 2                         # supersampling
+    CREAM, CARD, CHOC, INK, SOFT = "#fff6ea", "#fffdf8", "#5b3a29", "#3b2a22", "#8a6b5a"
+    PINK, BUTTER, SKY, MINT, LINE = "#f7a8c4", "#f8d27a", "#a9c9f5", "#b8e6cf", "#ecdccb"
+    FONTS = {"regular": "segoeui.ttf", "semi": "seguisb.ttf", "bold": "segoeuib.ttf", "hand": "segoepr.ttf"}
+
+    def __init__(self, cat):
+        self.cat = cat
+        self.u = UI_SCALE
+        self.k = self.u * self.R
+        self.pw, self.ph = int(self.W * self.u), int(self.H * self.u)
+        wa = work_area()
+        self.x, self.y = (wa[0] + wa[2] - self.pw) // 2, (wa[1] + wa[3] - self.ph) // 2
+        self.win = tk.Toplevel(cat.root)
+        self.win.overrideredirect(True)
+        self.win.attributes("-topmost", True)
+        self.win.geometry(f"{self.pw}x{self.ph}+{self.x}+{self.y}")
+        self.win.update_idletasks()
+        self.surface = Surface(int(self.win.wm_frame(), 16))
+        self.surface.resize(self.pw, self.ph)
+        self.page, self.hover, self.pressed, self.drag, self.hits = 0, None, None, None, []
+        self.fonts, self.pics, self.cache = {}, {}, {}
+        self.desktop, self.startup = has_desktop_icon(), in_startup()
+        self.pages = (self.page_hello, self.page_friends, self.page_rule, self.page_home)
+        self.base = self.paint_base()
+        self.data = self.render()
+        self.alpha, self.closing = 0, False
+        for ev, fn in (("<Motion>", self.on_move), ("<Leave>", self.on_leave),
+                       ("<ButtonPress-1>", self.on_press), ("<B1-Motion>", self.on_drag),
+                       ("<ButtonRelease-1>", self.on_release), ("<Key>", self.on_key)):
+            self.win.bind(ev, fn)
+        self.win.focus_force()
+        self.fade(0, 1)
+
+    # ---------------- drawing helpers (all in logical units)
+    def box(self, *v):
+        return tuple(x * self.k for x in v)
+
+    def font(self, size, style="regular"):
+        key = (size, style)
+        if key not in self.fonts:
+            try:
+                self.fonts[key] = ImageFont.truetype(self.FONTS[style], int(size * self.k))
+            except OSError:
+                self.fonts[key] = ImageFont.truetype("segoeui.ttf", int(size * self.k))
+        return self.fonts[key]
+
+    def text(self, d, x, y, s, size, style="regular", fill=None, width=None, center=False):
+        """Wrapped text, top-left (or top-centre) at x, y. Returns its height."""
+        f = self.font(size, style)
+        lines = []
+        for para in s.split("\n"):
+            cur = ""
+            for word in para.split():
+                trial = (cur + " " + word).strip()
+                if width and cur and d.textlength(trial, font=f) > width * self.k:
+                    lines.append(cur)
+                    cur = word
+                else:
+                    cur = trial
+            lines.append(cur)
+        txt = "\n".join(lines)
+        kw = dict(font=f, spacing=size * 0.28 * self.k, anchor="ma" if center else "la",
+                  align="center" if center else "left")
+        d.multiline_text((x * self.k, y * self.k), txt, fill=fill or self.INK, **kw)
+        x1, y1, x2, y2 = d.multiline_textbbox((x * self.k, y * self.k), txt, **kw)
+        return (y2 - y * self.k) / self.k
+
+    def pic(self, img, name, cx, cy, w, h):
+        """One of her poses, fitted into a w x h box centred on cx, cy."""
+        key = (name, w, h)
+        if key not in self.pics:
+            try:
+                p = Image.open(os.path.join(ASSETS, name + ".png")).convert("RGBA")
+                p = p.crop(p.getbbox())
+                f = min(w * self.k / p.width, h * self.k / p.height)
+                self.pics[key] = p.resize((max(1, round(p.width * f)), max(1, round(p.height * f))), Image.LANCZOS)
+            except OSError:
+                self.pics[key] = None  # her pictures are missing: the words still work
+        p = self.pics[key]
+        if p:
+            img.alpha_composite(p, (int(cx * self.k - p.width / 2), int(cy * self.k - p.height / 2)))
+
+    def button(self, d, x1, y1, x2, y2, label, name, primary=True):
+        hot = self.hover == name
+        r = (y2 - y1) / 2 * self.k
+        if primary:  # a chunky chocolate pill, like the website's
+            d.rounded_rectangle(self.box(x1, y1 + 3, x2, y2 + 3), radius=r, fill="#3b2418")
+            lift = -1 if hot else 0
+            d.rounded_rectangle(self.box(x1, y1 + lift, x2, y2 + lift), radius=r,
+                                fill="#6e4835" if hot else self.CHOC)
+            fg, cy = self.CREAM, (y1 + y2) / 2 + lift
+        else:
+            if hot:
+                d.rounded_rectangle(self.box(x1, y1, x2, y2), radius=r, fill="#f5e6d6")
+            fg, cy = self.CHOC, (y1 + y2) / 2
+        d.text(((x1 + x2) / 2 * self.k, cy * self.k), label, font=self.font(15, "semi"), fill=fg, anchor="mm")
+        self.hits.append(((x1, y1, x2, y2 + 3), name))
+
+    def heading(self, d, kicker, title, x=None, y=44):
+        center = x is None
+        x = self.W / 2 if center else x
+        self.text(d, x, y, kicker, 16, "hand", fill="#d9779b", center=center)
+        return y + 32 + self.text(d, x, y + 32, title, 30, "bold", fill=self.CHOC, center=center)
+
+    def paint_base(self):
+        """The card, its shadow and polka dots: the same on every page."""
+        M, W, H = self.M, self.W, self.H
+        size = (int(W * self.k), int(H * self.k))
+        shadow = Image.new("L", size, 0)
+        ImageDraw.Draw(shadow).rounded_rectangle(self.box(M + 4, M, W - M - 4, H - M + 6),
+                                                 radius=30 * self.k, fill=90)
+        img = Image.new("RGBA", size, (59, 36, 24, 0))
+        img.putalpha(shadow.filter(ImageFilter.GaussianBlur(14 * self.k)))
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle(self.box(M, M - 8, W - M, H - M - 4), radius=28 * self.k, fill=self.CREAM,
+                            outline=self.LINE, width=max(1, int(1.5 * self.k)))
+        for gy in range(M + 14, H - M - 14, 22):
+            for gx in range(M + 16 + (gy // 22 % 2) * 11, W - M - 12, 22):
+                d.ellipse(self.box(gx - 1.6, gy - 1.6, gx + 1.6, gy + 1.6), fill="#f7e8d6")
+        return img
+
+    def render(self):
+        key = (self.page, self.hover, self.desktop, self.startup)
+        if key not in self.cache:
+            img = self.base.copy()
+            d = ImageDraw.Draw(img)
+            self.hits = []
+            self.pages[self.page](img, d)
+            self.nav(d)
+            self.cache[key] = (to_bgra(img, self.R), self.hits)
+        data, self.hits = self.cache[key]
+        return data
+
+    def nav(self, d):
+        W, y = self.W, self.H - self.M - 46
+        if self.page:
+            self.button(d, 58, y - 18, 148, y + 18, "← back", "back", primary=False)
+        n = len(self.pages)
+        for i in range(n):
+            cx = W / 2 + (i - (n - 1) / 2) * 20
+            if i == self.page:
+                d.rounded_rectangle(self.box(cx - 10, y - 4, cx + 10, y + 4), radius=4 * self.k, fill=self.CHOC)
+            else:
+                d.ellipse(self.box(cx - 4, y - 4, cx + 4, y + 4), fill="#e6d2bf")
+        last = self.page == n - 1
+        self.button(d, W - 58 - (150 if last else 116), y - 20, W - 58, y + 18,
+                    "let's go! :3" if last else "next  →", "next")
+        cx, cy = W - self.M - 30, self.M + 18  # close (x)
+        if self.hover == "close":
+            d.ellipse(self.box(cx - 15, cy - 15, cx + 15, cy + 15), fill="#f5e6d6")
+        for a, b in ((-5, 5), (5, -5)):
+            d.line(self.box(cx - 5, cy + a, cx + 5, cy + b), fill=self.SOFT, width=max(1, int(2 * self.k)))
+        self.hits.append(((cx - 16, cy - 16, cx + 16, cy + 16), "close"))
+
+    # ---------------- the pages
+    def page_hello(self, img, d):
+        d.ellipse(self.box(76, 120, 304, 348), fill="#fde9b9")
+        d.ellipse(self.box(84, 118, 104, 138), fill=self.PINK)
+        d.ellipse(self.box(282, 326, 296, 340), fill=self.SKY)
+        d.ellipse(self.box(292, 134, 302, 144), fill=self.MINT)
+        self.pic(img, "wave", 190, 228, 230, 230)
+        x, w = 336, 236
+        self.text(d, x, 92, "welcome home", 16, "hand", fill="#d9779b")
+        y = 120 + self.text(d, x, 120, "hi, I'm\nCharles!", 36, "bold", fill=self.CHOC) + 14
+        y += self.text(d, x, y, "Charles Chocolate the Charles the IInd, if we're being formal. "
+                       "I live at the bottom of your screen now.", 15, width=w) + 12
+        self.text(d, x, y, "I nap, I knead, I chase butterflies, and I have one very important job.",
+                  15, width=w)
+
+    def page_friends(self, img, d):
+        top = self.heading(d, "the basics", "how to be my friend") + 16
+        items = [("happy", "wiggle your cursor on me", "I purr and make hearts", self.PINK),
+                 ("angry", "click me", "I get very offended", self.BUTTER),
+                 ("dizzy", "pick me up and shake", "I get dizzy. obviously.", self.SKY),
+                 ("idle", "right-click me", "my menu: coats, sizes, reels rules", self.MINT)]
+        tw, th, gap = 250, 112, 12
+        x0 = (self.W - tw * 2 - gap) / 2
+        for i, (name, title, sub, col) in enumerate(items):
+            x1, y1 = x0 + (i % 2) * (tw + gap), top + (i // 2) * (th + gap)
+            d.rounded_rectangle(self.box(x1, y1, x1 + tw, y1 + th), radius=20 * self.k, fill=self.CARD,
+                                outline=self.LINE, width=max(1, int(1.2 * self.k)))
+            d.rounded_rectangle(self.box(x1 + 9, y1 + 9, x1 + 99, y1 + th - 9), radius=15 * self.k,
+                                fill=mix(col, "#ffffff", 0.45))
+            self.pic(img, name, x1 + 54, y1 + th / 2, 82, th - 26)
+            y = y1 + 22
+            y += self.text(d, x1 + 112, y, title, 15, "bold", fill=self.CHOC, width=128) + 4
+            self.text(d, x1 + 112, y, sub, 13, fill=self.SOFT, width=128)
+
+    def page_rule(self, img, d):
+        s = self.cat.settings
+        lm, ws = int(s["limit_minutes"]), int(s["warning_seconds"])
+        d.ellipse(self.box(66, 128, 270, 332), fill="#fcd9e6")
+        d.ellipse(self.box(250, 140, 262, 152), fill=self.BUTTER)
+        self.pic(img, "mission", 168, 236, 196, 190)
+        x = 296
+        y = self.heading(d, "my one job", "the reels rule", x=x, y=78) + 14
+
+        def span(secs):
+            return "a minute" if secs == 60 else f"{secs // 60} minutes" if secs % 60 == 0 else f"{secs} seconds"
+
+        steps = [(self.PINK, f"you scroll Reels, Shorts or TikTok for {lm} minute{'s' * (lm != 1)}"),
+                 (self.BUTTER, f"I warn you {span(ws)} before" if 0 < ws < lm * 60 else "(you turned my warning off)"),
+                 (self.SKY, {"close": "I run over and swat the tab closed",
+                             "block": "I sit on your scroll wheel. no more scrolling.",
+                             "nag": "I tell you off. sternly."}[s["action"]])]
+        for i, (col, line) in enumerate(steps):
+            d.ellipse(self.box(x, y, x + 26, y + 26), fill=col)
+            d.text(((x + 13) * self.k, (y + 13) * self.k), str(i + 1), font=self.font(13, "bold"),
+                   fill=self.CHOC, anchor="mm")
+            y += max(30, self.text(d, x + 38, y + 1, line, 15, width=232) + 12)
+        self.text(d, x, y + 4, "change any of it:\nright-click me → Reels rules", 13, "hand",
+                  fill=self.SOFT, width=290)
+
+    def page_home(self, img, d):
+        top = self.heading(d, "last thing!", "make yourself at home") + 18
+        tw, th, gap = 228, 190, 20
+        x0 = (self.W - tw * 2 - gap) / 2
+        tiles = [("desktop", self.desktop, "desktop icon", "a little me to double-click", "add me", "added"),
+                 ("startup", self.startup, "start with Windows", "I'll be here every morning", "turn on", "on")]
+        for i, (name, on, title, sub, off_label, on_label) in enumerate(tiles):
+            x1, y1 = x0 + i * (tw + gap), top
+            hot = self.hover == name
+            lift = -2 if hot else 0
+            d.rounded_rectangle(self.box(x1, y1 + 4, x1 + tw, y1 + th + 4), radius=22 * self.k,
+                                fill="#efdfcf")
+            d.rounded_rectangle(self.box(x1, y1 + lift, x1 + tw, y1 + th + lift), radius=22 * self.k,
+                                fill="#e6f6ec" if on else self.CARD,
+                                outline=self.MINT if on else ("#dcc3ad" if hot else self.LINE),
+                                width=max(1, int(2 * self.k)))
+            cx, cy = x1 + tw / 2, y1 + 48 + lift
+            if name == "desktop":
+                if "icon" not in self.pics:
+                    self.pics["icon"] = portrait(int(60 * self.k))
+                ic = self.pics["icon"]
+                img.alpha_composite(ic, (int(cx * self.k - ic.width / 2), int(cy * self.k - ic.height / 2)))
+            else:  # a little sun
+                for j in range(8):
+                    a = j * math.pi / 4
+                    d.line(self.box(cx + math.cos(a) * 21, cy + math.sin(a) * 21,
+                                    cx + math.cos(a) * 29, cy + math.sin(a) * 29),
+                           fill="#f0b94a", width=max(1, int(3.5 * self.k)))
+                d.ellipse(self.box(cx - 16, cy - 16, cx + 16, cy + 16), fill=self.BUTTER, outline="#f0b94a",
+                          width=max(1, int(2 * self.k)))
+            self.text(d, cx, y1 + 88 + lift, title, 16, "bold", fill=self.CHOC, center=True)
+            self.text(d, cx, y1 + 112 + lift, sub, 13, fill=self.SOFT, center=True)
+            py = y1 + th - 28 + lift
+            pw = 96
+            if on:
+                d.rounded_rectangle(self.box(cx - pw / 2, py - 14, cx + pw / 2, py + 14), radius=14 * self.k,
+                                    fill=self.MINT)
+                d.text((cx * self.k, py * self.k), "✓ " + on_label, font=self.font(13, "semi"),
+                       fill="#2f6b4c", anchor="mm")
+            else:
+                d.rounded_rectangle(self.box(cx - pw / 2, py - 14, cx + pw / 2, py + 14), radius=14 * self.k,
+                                    fill=self.CHOC if hot else None, outline=self.CHOC,
+                                    width=max(1, int(1.5 * self.k)))
+                d.text((cx * self.k, py * self.k), off_label, font=self.font(13, "semi"),
+                       fill=self.CREAM if hot else self.CHOC, anchor="mm")
+            self.hits.append(((x1, y1, x1 + tw, y1 + th), name))
+        self.text(d, self.W / 2, top + th + 14, "you can change these any time from my right-click menu",
+                  13, "hand", fill=self.SOFT, center=True)
+
+    # ---------------- behaviour
+    def show(self):
+        self.data = self.render()
+        if not self.closing:
+            self.surface.show(self.data, self.x, self.y, self.alpha)
+
+    def fade(self, frm, to, t0=None):
+        """Fade (and float) in or out over a quarter of a second."""
+        t0 = t0 or time.time()
+        u = min(1.0, (time.time() - t0) / 0.25)
+        e = 1 - (1 - u) ** 3
+        a = frm + (to - frm) * e
+        self.alpha = int(255 * a)
+        self.surface.show(self.data, self.x, self.y + (1 - a) * 14 * self.u, self.alpha)
+        if u < 1:
+            self.win.after(15, self.fade, frm, to, t0)
+        elif to == 0:
+            self.win.destroy()
+            self.cat.welcome_closed()
+
+    def close(self):
+        if not self.closing:
+            self.closing = True
+            self.fade(1, 0)
+
+    def go(self, page):
+        self.page = max(0, min(len(self.pages) - 1, page))
+        self.hover = None
+        self.show()
+
+    def click(self, name):
+        if name == "next":
+            self.close() if self.page == len(self.pages) - 1 else self.go(self.page + 1)
+        elif name == "back":
+            self.go(self.page - 1)
+        elif name == "close":
+            self.close()
+        elif name == "desktop":
+            self.cat.toggle_desktop_icon(not self.desktop)
+            self.desktop = has_desktop_icon()
+            self.show()
+        elif name == "startup":
+            self.cat.toggle_startup(not self.startup)
+            self.startup = in_startup()
+            self.show()
+
+    def hit(self, e):
+        x, y = e.x / self.u, e.y / self.u
+        for (x1, y1, x2, y2), name in self.hits:
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                return name
+        return None
+
+    def on_move(self, e):
+        name = self.hit(e)
+        if name != self.hover and not self.drag:
+            self.hover = name
+            self.win.configure(cursor="hand2" if name else "")
+            self.show()
+
+    def on_leave(self, e):
+        if self.hover:
+            self.hover = None
+            self.show()
+
+    def on_press(self, e):
+        self.pressed = self.hit(e)
+        if not self.pressed:  # grab the card anywhere else to move it
+            self.drag = (e.x_root, e.y_root, self.x, self.y)
+
+    def on_drag(self, e):
+        if self.drag:
+            sx, sy, ox, oy = self.drag
+            self.x, self.y = ox + e.x_root - sx, oy + e.y_root - sy
+            self.surface.show(self.data, self.x, self.y, self.alpha)
+
+    def on_release(self, e):
+        if self.pressed and self.hit(e) == self.pressed:
+            self.click(self.pressed)
+        self.pressed = self.drag = None
+
+    def on_key(self, e):
+        if e.keysym == "Escape":
+            self.close()
+        elif e.keysym in ("Right", "Return", "space"):
+            self.click("next")
+        elif e.keysym == "Left" and self.page:
+            self.go(self.page - 1)
+
+
 if __name__ == "__main__":
-    # One Charles at a time (opening her again while she's already running does nothing).
-    _mutex = kernel32.CreateMutexW(None, False, "Local\\CharlesChocolateTheCharlesTheIInd")
-    if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
-        sys.exit(0)
+    _mutex = claim_single_instance()
     Cat().root.mainloop()
