@@ -15,15 +15,19 @@ Test:  python desk_cat.py --test    (limit drops to 20 seconds)
 """
 
 import ctypes
+import hashlib
 import json
 import math
 import os
 import queue
 import random
+import subprocess
 import sys
 import threading
 import time
 import tkinter as tk
+import urllib.request
+import webbrowser
 import winreg
 from ctypes import wintypes
 from urllib.parse import urlsplit
@@ -36,6 +40,8 @@ except ImportError:
     auto = None
 
 # ---------------------------------------------------------------- settings
+VERSION = "1.2.0"  # bump with every release; the release workflow checks it matches the tag
+REPO = "yad2thisyazm/charles-chocolate-the-charles-the-2nd"
 TEST_MODE = "--test" in sys.argv
 TEST_LIMIT = 20       # "Test the reels mission": 20s of reels open, scrolling or not
 SCROLL_GRACE = 45     # counts as "scrolling" if you scrolled within this many seconds
@@ -74,7 +80,8 @@ LIMITS = {"2 minutes": 2, "5 minutes": 5, "10 minutes": 10, "15 minutes": 15, "3
 WARNINGS = {"30 seconds before": 30, "1 minute before": 60, "2 minutes before": 120, "No warning": 0}
 ACTIONS = {"Close the tab": "close", "Block scrolling": "block", "Just tell me off": "nag"}
 DEFAULTS = {"coat": "Mochi (white)", "size": "Medium",
-            "limit_minutes": 5, "warning_seconds": 60, "action": "close", "welcomed": False}
+            "limit_minutes": 5, "warning_seconds": 60, "action": "close", "welcomed": False,
+            "check_updates": None}  # None: never asked, so it's off
 APP_NAME = "Charles Chocolate the Charles the 2nd"  # what the desktop icon is called
 
 # Settings live next to the script when run from source; in %APPDATA% for the packaged
@@ -393,6 +400,129 @@ def follow_this_exe():
         return
     if os.path.normcase(str(target)) != os.path.normcase(sys.executable):
         set_desktop_icon(True)
+
+
+# ---------------------------------------------------------------- updates
+def version_tuple(v):
+    try:
+        return tuple(int(x) for x in str(v).strip().lstrip("v").split("."))
+    except ValueError:
+        return (0,)
+
+
+class Updater:
+    """For the .exe, while "Check for updates" is on: asks GitHub once a day whether there's a
+    newer Charles.exe, and when you say so, downloads it, checks it, swaps it in for this one
+    and starts it (which makes this one leave). Settings live in %APPDATA%, so they stay."""
+
+    API = "https://api.github.com/repos/" + REPO + "/releases/latest"
+    DOWNLOADS = "https://github.com/" + REPO + "/releases/download/"
+
+    def __init__(self, enabled):
+        self.enabled = enabled    # callable: is the setting on?
+        self.last_check = 0.0
+        self.found = None         # {"version", "url", "size", "sha256"} of a newer release
+        self.progress = None      # 0..1 while downloading
+        self.message = None       # something she should say about it
+        self.busy = False
+        exe = sys.executable
+        self.old, self.new = exe[:-4] + ".old.exe", exe + ".new"
+        threading.Thread(target=self._loop, daemon=True).start()
+
+    def check_soon(self):
+        self.last_check = 0.0
+
+    def _loop(self):
+        time.sleep(30)
+        while True:
+            for leftover in (self.old, self.new):  # from the last update, once that copy has exited
+                if os.path.exists(leftover) and not self.busy:
+                    try:
+                        os.remove(leftover)
+                    except OSError:
+                        pass
+            if self.enabled() and not self.found and time.time() - self.last_check > 24 * 3600:
+                self.last_check = time.time()
+                try:
+                    self.found = self._latest()
+                except Exception:
+                    pass  # offline, GitHub's down...: try again tomorrow
+            time.sleep(60)
+
+    def _get(self, url):
+        req = urllib.request.Request(url, headers={"User-Agent": f"Charles-Chocolate/{VERSION}",
+                                                   "Accept": "application/vnd.github+json"})
+        return urllib.request.urlopen(req, timeout=30)
+
+    def _latest(self):
+        with self._get(self.API) as r:
+            rel = json.load(r)
+        if rel.get("draft") or rel.get("prerelease") or \
+                version_tuple(rel.get("tag_name")) <= version_tuple(VERSION):
+            return None
+        for a in rel.get("assets", []):
+            url = a.get("browser_download_url", "")
+            if a.get("name") == "Charles.exe" and url.startswith(self.DOWNLOADS):
+                return {"version": rel["tag_name"].lstrip("v"), "url": url, "size": int(a["size"]),
+                        "sha256": (a.get("digest") or "").removeprefix("sha256:").lower()}
+        return None
+
+    def install(self):
+        if self.found and not self.busy:
+            self.busy = True
+            threading.Thread(target=self._install, daemon=True).start()
+
+    def _install(self):
+        f, exe = self.found, sys.executable
+        try:
+            self.progress = 0.0
+            digest = hashlib.sha256()
+            done = 0
+            with self._get(f["url"]) as r, open(self.new, "wb") as out:
+                while chunk := r.read(1 << 18):
+                    out.write(chunk)
+                    digest.update(chunk)
+                    done += len(chunk)
+                    self.progress = min(1.0, done / max(1, f["size"]))
+            with open(self.new, "rb") as check:
+                looks_like_exe = check.read(2) == b"MZ"
+            if done != f["size"] or not looks_like_exe or (f["sha256"] and digest.hexdigest() != f["sha256"]):
+                raise ValueError("download didn't match")
+        except Exception:
+            self._give_up("the download went wrong, so I'm staying as I am. try again later?")
+            return
+        # Windows lets a running .exe be renamed (not deleted), so: me -> .old.exe, new -> me.
+        try:
+            if os.path.exists(self.old):
+                os.remove(self.old)
+            os.replace(exe, self.old)
+        except OSError:
+            self._give_up("I'm not allowed to change my own file here. grab the new me from GitHub!",
+                          open_page=True)
+            return
+        try:
+            os.replace(self.new, exe)
+            env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1")  # start it as a fresh app
+            subprocess.Popen([exe], env=env, close_fds=True,
+                             creationflags=0x00000008 | 0x00000200)  # DETACHED | NEW_PROCESS_GROUP
+            self.message = "see you in a sec :3"  # the new me will ask me to leave
+        except OSError:
+            try:
+                if os.path.exists(exe):
+                    os.replace(exe, self.new)
+                os.replace(self.old, exe)
+            except OSError:
+                pass
+            self._give_up("hm, the new me wouldn't start, so I'm staying as I am.")
+
+    def _give_up(self, message, open_page=False):
+        try:
+            os.remove(self.new)
+        except OSError:
+            pass
+        self.progress, self.busy, self.message = None, False, message
+        if open_page:
+            webbrowser.open("https://github.com/" + REPO + "/releases/latest")
 
 
 # ---------------------------------------------------------------- reels watcher
@@ -846,6 +976,8 @@ def load_settings():
             ok = isinstance(value, str) and value in choices[key]
         elif key == "welcomed":
             ok = isinstance(value, bool)
+        elif key == "check_updates":
+            ok = value is None or isinstance(value, bool)
         elif key in ranges:
             try:
                 ok = not isinstance(value, bool) and value == int(value) and \
@@ -912,6 +1044,8 @@ class Cat:
 
         self.drag = None
         self.welcome = None
+        self.updater = Updater(lambda: bool(self.settings["check_updates"])) if FROZEN else None
+        self.update_offered = False
         self.root.bind("<ButtonPress-1>", self.on_press)
         self.root.bind("<B1-Motion>", self.on_drag)
         self.root.bind("<ButtonRelease-1>", self.on_release)
@@ -923,6 +1057,11 @@ class Cat:
             self.say(f"mrrp! (my settings file had a typo in {', '.join(bad)}, so I used the default)", 7)
         elif not self.settings["welcomed"]:
             self.say("oh! a new human. read this pls :3", 5)
+        elif self.updater and self.settings["check_updates"] is None:
+            # someone who had her before updates existed: tell them once
+            self.say("new trick! I can check for updates. right-click me → Check for updates", 8)
+            self.settings["check_updates"] = False
+            self.save_settings()
         else:
             self.say("mrrp! hi :3", 3)
         self.set_state("wave", 2.6)
@@ -977,9 +1116,14 @@ class Cat:
         self.desktop_var = tk.BooleanVar(value=has_desktop_icon())
         self.menu.add_checkbutton(label="Desktop icon", variable=self.desktop_var,
                                   command=self.toggle_desktop_icon)
+        if self.updater:
+            self.updates_var = tk.BooleanVar(value=bool(self.settings["check_updates"]))
+            self.menu.add_checkbutton(label="Check for updates", variable=self.updates_var,
+                                      command=self.toggle_updates)
         self.menu.add_command(label="How I work", command=self.show_welcome)
         self.menu.add_command(label="Test the reels mission", command=self.test_mission)
         self.menu.add_separator()
+        self.menu.add_command(label=f"Charles v{VERSION}", state="disabled")
         self.menu.add_command(label="Bye Charles (quit)", command=self.quit)
 
     def set_look(self, key):
@@ -1025,14 +1169,41 @@ class Cat:
             self.say("hm, Windows said no", 2)
         self.desktop_var.set(has_desktop_icon())
 
+    def toggle_updates(self, on=None):
+        on = self.updates_var.get() if on is None else on
+        self.settings["check_updates"] = on
+        self.updates_var.set(on)
+        self.save_settings()
+        if on:
+            self.updater.check_soon()
+            self.say("ok! I'll peek at GitHub once a day for a newer me", 3)
+        else:
+            self.say("ok, no update checks.", 2)
+
+    def check_updater(self):
+        """Offer a newer version once it's found, and say how an update's going."""
+        u = self.updater
+        if not u or self.state.startswith("mission"):
+            return
+        if u.found and not self.update_offered:
+            self.update_offered = True
+            self.menu.insert_command(1, label=f"Update me to v{u.found['version']}", command=u.install)
+            self.say(f"a new me is out! (v{u.found['version']}) right-click me → Update me", 7)
+        if u.message:
+            self.say(u.message, 5)
+            u.message = None
+        elif u.busy and u.progress is not None and time.time() > self.bubble_until - 0.3:
+            self.say(f"fetching the new me... {int(u.progress * 100)}%", 1)
+
     def show_welcome(self):
         if self.welcome is None:
             self.welcome = Welcome(self)
 
     def welcome_closed(self):
         self.welcome = None
-        if not self.settings["welcomed"]:
+        if not self.settings["welcomed"] or self.settings["check_updates"] is None:
             self.settings["welcomed"] = True
+            self.settings["check_updates"] = bool(self.settings["check_updates"])
             self.save_settings()
         if self.state in ("idle", "sleep", "wave", "knead", "happy"):
             self.pose = "sit"
@@ -1806,6 +1977,7 @@ class Cat:
             self.screen_check_at = now + 1
             self.check_screen()
         self.track_reels(dt)
+        self.check_updater()
         self.check_petting()
         self.update(dt)
         self.present(self.render())
@@ -1850,6 +2022,7 @@ class Welcome:
         self.page, self.hover, self.pressed, self.drag, self.hits = 0, None, None, None, []
         self.fonts, self.pics, self.cache = {}, {}, {}
         self.desktop, self.startup = has_desktop_icon(), in_startup()
+        self.updates = bool(cat.settings["check_updates"])
         self.pages = (self.page_hello, self.page_friends, self.page_rule, self.page_home)
         self.base = self.paint_base()
         self.data = self.render()
@@ -1950,7 +2123,7 @@ class Welcome:
         return img
 
     def render(self):
-        key = (self.page, self.hover, self.desktop, self.startup)
+        key = (self.page, self.hover, self.desktop, self.startup, self.updates)
         if key not in self.cache:
             img = self.base.copy()
             d = ImageDraw.Draw(img)
@@ -2043,10 +2216,14 @@ class Welcome:
 
     def page_home(self, img, d):
         top = self.heading(d, "last thing!", "make yourself at home") + 18
-        tw, th, gap = 228, 190, 20
-        x0 = (self.W - tw * 2 - gap) / 2
         tiles = [("desktop", self.desktop, "desktop icon", "a little me to double-click", "add me", "added"),
                  ("startup", self.startup, "start with Windows", "I'll be here every morning", "turn on", "on")]
+        if self.cat.updater:
+            tiles.append(("updates", self.updates, "stay up to date",
+                          "I peek at GitHub once a day for a newer me", "turn on", "on"))
+        gap = 14 if len(tiles) == 3 else 20
+        tw, th = (172 if len(tiles) == 3 else 228), 196
+        x0 = (self.W - tw * len(tiles) - gap * (len(tiles) - 1)) / 2
         for i, (name, on, title, sub, off_label, on_label) in enumerate(tiles):
             x1, y1 = x0 + i * (tw + gap), top
             hot = self.hover == name
@@ -2057,13 +2234,13 @@ class Welcome:
                                 fill="#e6f6ec" if on else self.CARD,
                                 outline=self.MINT if on else ("#dcc3ad" if hot else self.LINE),
                                 width=max(1, int(2 * self.k)))
-            cx, cy = x1 + tw / 2, y1 + 48 + lift
+            cx, cy = x1 + tw / 2, y1 + 46 + lift
             if name == "desktop":
                 if "icon" not in self.pics:
-                    self.pics["icon"] = portrait(int(60 * self.k))
+                    self.pics["icon"] = portrait(int(58 * self.k))
                 ic = self.pics["icon"]
                 img.alpha_composite(ic, (int(cx * self.k - ic.width / 2), int(cy * self.k - ic.height / 2)))
-            else:  # a little sun
+            elif name == "startup":  # a little sun
                 for j in range(8):
                     a = j * math.pi / 4
                     d.line(self.box(cx + math.cos(a) * 21, cy + math.sin(a) * 21,
@@ -2071,9 +2248,16 @@ class Welcome:
                            fill="#f0b94a", width=max(1, int(3.5 * self.k)))
                 d.ellipse(self.box(cx - 16, cy - 16, cx + 16, cy + 16), fill=self.BUTTER, outline="#f0b94a",
                           width=max(1, int(2 * self.k)))
-            self.text(d, cx, y1 + 88 + lift, title, 16, "bold", fill=self.CHOC, center=True)
-            self.text(d, cx, y1 + 112 + lift, sub, 13, fill=self.SOFT, center=True)
-            py = y1 + th - 28 + lift
+            else:  # sparkles: something new
+                for sx, sy, r in ((cx - 4, cy + 2, 22), (cx + 20, cy - 16, 10), (cx - 22, cy - 18, 7)):
+                    pts = [(sx + math.cos(j * math.pi / 4 - math.pi / 2) * (r if j % 2 == 0 else r * 0.32),
+                            sy + math.sin(j * math.pi / 4 - math.pi / 2) * (r if j % 2 == 0 else r * 0.32))
+                           for j in range(8)]
+                    d.polygon([(px * self.k, py * self.k) for px, py in pts], fill="#bfa8f2")
+            y = y1 + 86 + lift
+            y += self.text(d, cx, y, title, 16, "bold", fill=self.CHOC, center=True, width=tw - 20) + 4
+            self.text(d, cx, y, sub, 13, fill=self.SOFT, center=True, width=tw - 24)
+            py = y1 + th - 26 + lift
             pw = 96
             if on:
                 d.rounded_rectangle(self.box(cx - pw / 2, py - 14, cx + pw / 2, py + 14), radius=14 * self.k,
@@ -2134,6 +2318,10 @@ class Welcome:
         elif name == "startup":
             self.cat.toggle_startup(not self.startup)
             self.startup = in_startup()
+            self.show()
+        elif name == "updates":
+            self.cat.toggle_updates(not self.updates)
+            self.updates = bool(self.cat.settings["check_updates"])
             self.show()
 
     def hit(self, e):

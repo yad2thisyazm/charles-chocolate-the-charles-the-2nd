@@ -91,16 +91,22 @@ Click **More info → Run anyway**. If you'd rather not trust a binary, build it
 
 ### Updating
 
-Download the new `Charles.exe` and open it. The Charles who's already running steps aside for
-the new one, and her desktop icon and **Start with Windows** follow the new copy. Your coat,
-size and reels rules are kept. Then you can delete the old .exe.
+**The easy way:** turn on **Check for updates** (in her first-run tour, or right-click her).
+Once a day she asks GitHub if there's a newer Charles. If there is, she tells you, and
+right-click → **Update me** downloads it, checks it's the real file (size and SHA-256 from
+GitHub), swaps it in and restarts as the new version. It's off until you turn it on.
+
+**By hand:** download the new `Charles.exe` and open it. The Charles who's already running steps
+aside for the new one, and her desktop icon and **Start with Windows** follow the new copy.
+Then you can delete the old .exe.
+
+Either way your coat, size and reels rules are kept: they live in
+`%APPDATA%\Charles Chocolate`, not in the .exe.
 
 Coming from v1.0.0? That version doesn't know how to step aside, so right-click it →
 **Bye Charles (quit)** first.
 
-Charles doesn't check for updates herself (she makes no network connections), so watch the
-[releases page](https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/releases)
-if you'd like to know.
+Running from source? Update with `git pull`; the update check is only in the .exe.
 
 ### From source
 
@@ -166,8 +172,12 @@ stores URLs, titles or history. The only thing written to disk is her settings f
 size, reels rules). The `uiautomation` library may write an `@AutomationLog.txt` next to her
 with technical errors only.
 
-**What leaves your computer:** nothing. Charles makes no network connections at all: no
-analytics, no telemetry, no update checks. It's one Python file, so you can check.
+**What leaves your computer:** nothing. No analytics, no telemetry. The only network
+connection she ever makes is the update check, and only if you turn on **Check for updates**:
+once a day she asks GitHub's public releases page for the latest version number (sending
+nothing about you beyond what any web request does, like your IP address), and downloads the
+new .exe from GitHub only when you click **Update me**. With it off (the default) she makes no
+network connections at all. It's one Python file, so you can check.
 
 **What permissions she needs:** none beyond a normal app. She runs as you, without admin
 rights. She uses:
