@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+@AutomationLog.txt
+desk_cat_settings.json
