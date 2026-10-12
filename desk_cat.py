@@ -26,6 +26,7 @@ import time
 import tkinter as tk
 import winreg
 from ctypes import wintypes
+from urllib.parse import urlsplit
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
@@ -40,13 +41,12 @@ TEST_LIMIT = 20       # "Test the reels mission": 20s of reels open, scrolling o
 SCROLL_GRACE = 45     # counts as "scrolling" if you scrolled within this many seconds
 FORGET_AFTER = 60     # leave reels this long and the timer resets
 
-REEL_URLS = ("instagram.com/reels", "instagram.com/reel/", "youtube.com/shorts",
-             "tiktok.com", "facebook.com/reel", "m.facebook.com/reel")
 REEL_TITLES = ("reels", "tiktok", "#shorts", "youtube shorts")  # only if the URL can't be read
 REEL_EXES = ("tiktok.exe", "instagram.exe")  # desktop apps, matched on the program itself
 REEL_STORE_APPS = ("tiktok", "instagram")    # Store apps: exact window title in ApplicationFrameHost
 BROWSERS = {"chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe",
-            "opera_gx.exe", "vivaldi.exe", "arc.exe", "zen.exe"}
+            "opera_gx.exe", "vivaldi.exe", "arc.exe", "zen.exe", "chromium.exe",
+            "librewolf.exe", "waterfox.exe", "floorp.exe", "thorium.exe"}
 
 POKE_LINES = ["hss!", "don't touch me", "mrrow!!", "rude.", "excuse me??", "*swats you*"]
 IDLE_LINES = ["mrrp", "...", "meow", "*stares at you*", "mew?"]
@@ -134,10 +134,23 @@ kernel32.OpenProcess.restype = wintypes.HANDLE
 kernel32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD,
                                                 wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
 kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+user32.UnhookWindowsHookEx.argtypes = [wintypes.HHOOK]
+user32.SetTimer.argtypes = [wintypes.HWND, ctypes.c_size_t, wintypes.UINT, ctypes.c_void_p]
+user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+user32.BringWindowToTop.argtypes = [wintypes.HWND]
+user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+user32.MonitorFromPoint.restype = wintypes.HMONITOR
+kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+kernel32.CreateMutexW.restype = wintypes.HANDLE
+try:
+    UI_SCALE = user32.GetDpiForSystem() / 96  # display scaling (150% -> 1.5)
+except Exception:
+    UI_SCALE = 1.0
 
 WM_CLOSE = 0x0010
-VK_LBUTTON, VK_CONTROL, VK_MENU, VK_W, VK_UP, VK_DOWN = 0x01, 0x11, 0x12, 0x57, 0x26, 0x28
+VK_LBUTTON, VK_SHIFT, VK_CONTROL, VK_MENU, VK_W, VK_LWIN, VK_RWIN = 0x01, 0x10, 0x11, 0x12, 0x57, 0x5B, 0x5C
 SCROLL_KEYS = {0x21, 0x22, 0x23, 0x24, 0x26, 0x28}  # PgUp, PgDn, End, Home, Up, Down
+NEXT_KEYS = SCROLL_KEYS | {0x20, 0x4A, 0x4B}  # + Space, J, K: counted as scrolling, never blocked
 KEYUP = 0x0002
 
 
@@ -147,6 +160,14 @@ class BITMAPINFOHEADER(ctypes.Structure):
                 ("biCompression", wintypes.DWORD), ("biSizeImage", wintypes.DWORD),
                 ("biXPelsPerMeter", wintypes.LONG), ("biYPelsPerMeter", wintypes.LONG),
                 ("biClrUsed", wintypes.DWORD), ("biClrImportant", wintypes.DWORD)]
+
+
+class MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT),
+                ("dwFlags", wintypes.DWORD)]
+
+
+user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFO)]
 
 
 class BLENDFUNCTION(ctypes.Structure):
@@ -182,9 +203,16 @@ def window_rect(hwnd):
     return r.left, r.top, r.right, r.bottom
 
 
-def work_area():
-    r = wintypes.RECT()
-    user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(r), 0)  # SPI_GETWORKAREA
+def work_area(x=0, y=0):
+    """The screen minus the taskbar, on the monitor nearest a point (the main one by default)."""
+    mi = MONITORINFO()
+    mi.cbSize = ctypes.sizeof(MONITORINFO)
+    mon = user32.MonitorFromPoint(wintypes.POINT(int(x), int(y)), 2)  # MONITOR_DEFAULTTONEAREST
+    if mon and user32.GetMonitorInfoW(mon, ctypes.byref(mi)):
+        r = mi.rcWork
+    else:
+        r = wintypes.RECT()
+        user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(r), 0)  # SPI_GETWORKAREA
     return r.left, r.top, r.right, r.bottom
 
 
@@ -199,12 +227,26 @@ def tap(vk, up=False):
 
 
 def bring_to_front(hwnd):
-    if user32.GetForegroundWindow() == hwnd:
+    fg = user32.GetForegroundWindow()
+    if fg == hwnd:
         return True
-    tap(VK_MENU); tap(VK_MENU, up=True)  # Alt tap lets us take focus
-    user32.SetForegroundWindow(hwnd)
+    # Borrow the front window's input state so Windows lets us switch focus. (An Alt
+    # tap would do it too, but that lands in whatever app you're using.)
+    me = kernel32.GetCurrentThreadId()
+    them = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+    attached = bool(them) and them != me and user32.AttachThreadInput(me, them, True)
+    try:
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+    finally:
+        if attached:
+            user32.AttachThreadInput(me, them, False)
     time.sleep(0.15)
     return user32.GetForegroundWindow() == hwnd
+
+
+def modifiers_held():
+    return any(user32.GetAsyncKeyState(vk) & 0x8000 for vk in (VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN))
 
 
 def shade(hex_color, f):
@@ -225,6 +267,37 @@ def bezier(pts, t):
 
 
 # ---------------------------------------------------------------- reels watcher
+def is_reels_url(url):
+    """Is this address a short-video feed? Matches the site and the start of the path
+    exactly, so instagram.com/reelsofindia or google.com/search?q=tiktok.com don't count."""
+    url = (url or "").strip().lower()
+    if not url or " " in url:  # something typed into the address bar, not an address
+        return False
+    if "://" not in url:  # Chrome and Edge hide the https://
+        url = "https://" + url
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+    except ValueError:
+        return False
+    if parts.scheme not in ("http", "https"):
+        return False
+    for prefix in ("www.", "m."):
+        host = host.removeprefix(prefix)
+    path = [p for p in parts.path.split("/") if p]
+    first = path[0] if path else ""
+    if host == "instagram.com":
+        return first in ("reels", "reel")
+    if host == "youtube.com":
+        return first == "shorts"
+    if host == "facebook.com":
+        return first in ("reel", "reels")
+    if host == "tiktok.com":  # the feeds and single videos; not profiles, settings, help...
+        return first in ("", "foryou", "following", "friends", "explore") or \
+            (first.startswith("@") and len(path) > 1 and path[1] in ("video", "photo"))
+    return False
+
+
 def same_page(tab_name, title):
     """Does a tab's name belong to the page the window title shows?"""
     a, b = (tab_name or "").lower().strip()[:24], (title or "").lower()
@@ -236,14 +309,14 @@ class ReelsWatcher:
     plus mouse/keyboard hooks that note when you scroll (and can block it)."""
 
     def __init__(self):
-        self.hwnd = None          # focused reels window, or None
-        self.is_browser = False
-        self.sure = False         # True if we read the URL (or matched the app's exe)
+        # (reels hwnd or None, is it a browser, are we sure): one tuple, swapped in whole,
+        # so nobody reads the window from one check and the rest from the next.
+        self.seen = (None, False, False)
         self.last_scroll = 0.0
         self.hook_ok = True
-        self.block_hwnd = None    # while set, scrolling in this reels window is swallowed
+        self.blocking = False     # while set, scrolling in any reels window is swallowed
         self.blocked_at = 0.0     # last time we swallowed a scroll
-        self._edit_cache = {}
+        self._edit_cache = {}     # hwnd -> (address bar, or None while we wait to look again)
         self.jobs = queue.Queue()
         threading.Thread(target=self._watch, daemon=True).start()
         threading.Thread(target=self._hooks, daemon=True).start()
@@ -251,59 +324,74 @@ class ReelsWatcher:
     def scrolling(self):
         if not self.hook_ok:
             return True
-        if user32.GetAsyncKeyState(VK_DOWN) & 0x8000 or user32.GetAsyncKeyState(VK_UP) & 0x8000:
-            self.last_scroll = time.time()
         return time.time() - self.last_scroll < SCROLL_GRACE
-
-    def _blocking(self, hwnd):
-        b = self.block_hwnd
-        return bool(b) and hwnd == b and self.hwnd == b
 
     def _hooks(self):
         def mouse(n, w, l):
             if n == 0 and w in (0x020A, 0x020E):  # wheel / horizontal wheel
-                self.last_scroll = time.time()
-                if self.block_hwnd:
-                    under = user32.GetAncestor(user32.WindowFromPoint(wintypes.POINT(*cursor_pos())), 2)
-                    if self._blocking(under):
+                reels = self.seen[0]
+                pt = ctypes.cast(l, ctypes.POINTER(wintypes.POINT))[0]  # MSLLHOOKSTRUCT.pt
+                if reels and user32.GetAncestor(user32.WindowFromPoint(pt), 2) == reels:
+                    self.last_scroll = time.time()
+                    if self.blocking:
                         self.blocked_at = time.time()
                         return 1
             return user32.CallNextHookEx(None, n, w, l)
 
         def keyboard(n, w, l):
-            if n == 0 and self.block_hwnd and w in (0x0100, 0x0104):  # WM_KEYDOWN / WM_SYSKEYDOWN
+            if n == 0 and w in (0x0100, 0x0104):  # WM_KEYDOWN / WM_SYSKEYDOWN
                 vk = ctypes.cast(l, ctypes.POINTER(wintypes.DWORD))[0]
-                if vk in SCROLL_KEYS and self._blocking(user32.GetForegroundWindow()):
-                    self.blocked_at = time.time()
-                    return 1
+                reels = self.seen[0]
+                if vk in NEXT_KEYS and reels and user32.GetForegroundWindow() == reels:
+                    self.last_scroll = time.time()
+                    if self.blocking and vk in SCROLL_KEYS:
+                        self.blocked_at = time.time()
+                        return 1
             return user32.CallNextHookEx(None, n, w, l)
 
         self._procs = HOOKPROC(mouse), HOOKPROC(keyboard)
         mod = kernel32.GetModuleHandleW(None)
-        if not user32.SetWindowsHookExW(14, self._procs[0], mod, 0):  # WH_MOUSE_LL
-            self.hook_ok = False
+        hooks = []
+
+        def install():
+            for h in hooks:
+                if h:
+                    user32.UnhookWindowsHookEx(h)
+            hooks[:] = [user32.SetWindowsHookExW(14, self._procs[0], mod, 0),  # WH_MOUSE_LL
+                        user32.SetWindowsHookExW(13, self._procs[1], mod, 0)]  # WH_KEYBOARD_LL
+            self.hook_ok = bool(hooks[0])
+
+        install()
+        if not self.hook_ok:
             return
-        user32.SetWindowsHookExW(13, self._procs[1], mod, 0)  # WH_KEYBOARD_LL
+        # Windows quietly drops a low-level hook that answers too slowly (easy for Python
+        # while she's busy drawing) and doesn't tell us, so put fresh ones in every minute.
+        user32.SetTimer(None, 0, 60_000, None)
         msg = wintypes.MSG()
         while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
-            pass
+            if msg.message == 0x0113:  # WM_TIMER
+                install()
 
     def _url(self, hwnd):
         if auto is None:
             return ""
-        edit = self._edit_cache.get(hwnd)
+        edit, retry_at = self._edit_cache.get(hwnd, (None, 0.0))
+        if edit is None and time.time() < retry_at:
+            return ""
         try:
             if edit is None or not edit.Exists(0, 0):
                 edit = auto.ControlFromHandle(hwnd).EditControl(searchDepth=16)
-                self._edit_cache[hwnd] = edit
-            return (edit.GetValuePattern().Value or "").lower()
+            url = (edit.GetValuePattern().Value or "").lower()
+            self._edit_cache[hwnd] = (edit, 0.0)
+            return url
         except Exception:
-            self._edit_cache.pop(hwnd, None)
+            # No address bar (fullscreen, an installed web app): don't spend a second
+            # searching for it every second, look again in a little while.
+            self._edit_cache[hwnd] = (None, time.time() + 15)
             return ""
 
     def url_is_reels(self, hwnd):
-        url = self._url(hwnd)
-        return any(u in url for u in REEL_URLS)
+        return is_reels_url(self._url(hwnd))
 
     def _check(self):
         # The focused window first; if that isn't reels (e.g. a screen recorder
@@ -327,7 +415,7 @@ class ReelsWatcher:
         if exe in BROWSERS:
             url = self._url(hwnd)
             if url:  # trust the address bar over the title ("fishing reels - amazon")
-                return (hwnd if any(u in url for u in REEL_URLS) else None), True, True
+                return (hwnd if is_reels_url(url) else None), True, True
             hit = any(t in title for t in REEL_TITLES)
             return (hwnd if hit else None), True, False
         if exe in REEL_EXES or (exe == "applicationframehost.exe" and title.strip() in REEL_STORE_APPS):
@@ -342,8 +430,8 @@ class ReelsWatcher:
         return job
 
     def find_tab(self, hwnd):
-        """The active tab's close (X) button and where it is on screen, or None if
-        we can't be sure which tab is showing the reels."""
+        """The active reels tab: where to swat, and its close (X) button if we can tell
+        which one that is. None if we can't be sure which tab is showing the reels."""
         if auto is None or not self.url_is_reels(hwnd):
             return None
         root = auto.ControlFromHandle(hwnd)
@@ -360,32 +448,45 @@ class ReelsWatcher:
                     selected = True  # no selection info: the name check below decides
                 if not selected or not same_page(tab.Name, title):
                     continue
-                for btn, _ in auto.WalkControl(tab, maxDepth=2):
-                    b = btn.BoundingRectangle
-                    if btn.ControlTypeName == "ButtonControl" and b.width() > 0:
-                        return {"x": (b.left + b.right) // 2, "y": (b.top + b.bottom) // 2,
-                                "button": btn, "name": tab.Name}
-                return None  # right tab, but no close button we can press
+                buttons = [b for b, _ in auto.WalkControl(tab, maxDepth=2)
+                           if b.ControlTypeName == "ButtonControl" and b.BoundingRectangle.width() > 0]
+                # A tab playing sound can have a mute button next to the X (Edge, or Chrome
+                # with tab muting on), so only press one that's clearly the close button.
+                # Otherwise she still swats the tab, and closes it with Ctrl+W.
+                named = [b for b in buttons if "close" in (b.Name or "").lower()]
+                btn = named[0] if named else buttons[0] if len(buttons) == 1 else None
+                r = (btn or tab).BoundingRectangle
+                if r.width() <= 0:
+                    return None
+                x = (r.left + r.right) // 2 if btn else r.right - 16
+                return {"x": x, "y": (r.top + r.bottom) // 2, "button": btn, "name": tab.Name}
             return None
         return None
 
-    def close_tab(self, hwnd, btn):
-        """Close the reels tab, re-checking the address bar right before each attempt.
+    def close_tab(self, hwnd):
+        """Close the reels tab. Finds it afresh right before pressing (you may have
+        switched tabs while she ran over), so it only presses what's showing reels now.
         Returns "closed", "gone" (you'd already left) or "unsure" (didn't touch anything)."""
         if not user32.IsWindow(hwnd) or not self.url_is_reels(hwnd):
             return "gone"
+        found = self.find_tab(hwnd)
+        if found is None:
+            return "unsure"
+        btn = found["button"]
         if btn is not None:
             try:
-                if btn.Exists(0, 0):
-                    try:
-                        btn.GetInvokePattern().Invoke()
-                    except Exception:
-                        btn.GetLegacyIAccessiblePattern().DoDefaultAction()
-                    return "closed"
+                try:
+                    btn.GetInvokePattern().Invoke()
+                except Exception:
+                    btn.GetLegacyIAccessiblePattern().DoDefaultAction()
+                return "closed"
             except Exception:
                 pass
-        # Keyboard fallback: only if that window is in front *and* still on reels.
-        if bring_to_front(hwnd) and self.url_is_reels(hwnd) and user32.GetForegroundWindow() == hwnd:
+        # Keyboard fallback: only if that window is in front *and* still on reels, and
+        # no key is held (Shift would turn Ctrl+W into close-the-whole-window).
+        if modifiers_held() or not bring_to_front(hwnd):
+            return "unsure"
+        if self.url_is_reels(hwnd) and user32.GetForegroundWindow() == hwnd and not modifiers_held():
             tap(VK_CONTROL); tap(VK_W); tap(VK_W, up=True); tap(VK_CONTROL, up=True)
             return "closed"
         return "unsure"
@@ -410,13 +511,17 @@ class ReelsWatcher:
             if time.time() >= next_check:
                 next_check = time.time() + 1.0
                 try:
-                    self.hwnd, self.is_browser, self.sure = self._check()
+                    self.seen = self._check()
                 except Exception:
-                    self.hwnd = None
+                    self.seen = (None, False, False)
+                if len(self._edit_cache) > 32:  # forget windows that have closed
+                    for h in [h for h in self._edit_cache if not user32.IsWindow(h)]:
+                        del self._edit_cache[h]
 
 
 # ---------------------------------------------------------------- drawing
-SS = 3  # supersampling for smooth edges
+# supersampling for smooth edges (scaled-up displays already have the pixels to spare)
+SS = 3 if UI_SCALE < 1.4 else 2
 
 
 class Painter:
@@ -522,16 +627,43 @@ def heart(d, x, y, s, fill):
 
 
 # ---------------------------------------------------------------- the cat
+def load_settings():
+    """Saved settings, plus the names of any that were invalid. People hand-edit the
+    file, so anything that doesn't make sense falls back to its default."""
+    settings, bad = dict(DEFAULTS), []
+    try:
+        with open(SETTINGS_FILE, encoding="utf-8") as f:
+            saved = json.load(f)
+    except FileNotFoundError:
+        return settings, bad
+    except Exception:
+        return settings, ["the whole file"]
+    if not isinstance(saved, dict):
+        return settings, ["the whole file"]
+    choices = {"coat": COATS, "size": SIZES, "action": ACTIONS.values()}
+    ranges = {"limit_minutes": (1, 24 * 60), "warning_seconds": (0, 24 * 60 * 60)}
+    for key, value in saved.items():
+        if key in choices:
+            ok = isinstance(value, str) and value in choices[key]
+        elif key in ranges:
+            try:
+                ok = not isinstance(value, bool) and value == int(value) and \
+                    ranges[key][0] <= int(value) <= ranges[key][1]
+                value = int(value)
+            except (TypeError, ValueError):
+                ok = False
+        else:
+            continue
+        if ok:
+            settings[key] = value
+        else:
+            bad.append(key)
+    return settings, bad
+
+
 class Cat:
     def __init__(self):
-        self.settings = dict(DEFAULTS)
-        try:
-            with open(SETTINGS_FILE) as f:
-                self.settings.update(json.load(f))
-        except Exception:
-            pass
-        if self.settings["action"] not in ACTIONS.values():
-            self.settings["action"] = DEFAULTS["action"]
+        self.settings, bad = load_settings()
 
         self.root = tk.Tk()
         self.root.overrideredirect(True)
@@ -578,6 +710,7 @@ class Cat:
         self.last_drag_v = (0, 0)
         self.dizzy_pending = False
         self.last_tick = time.time()
+        self.screen_check_at = 0.0
         self.init_anim()
 
         self.drag = None
@@ -588,7 +721,10 @@ class Cat:
         self.build_menu()
 
         self.root.geometry(f"{self.W}x{self.H}+{int(self.x)}+{int(self.y)}")
-        self.say("mrrp! hi :3", 3)
+        if bad:
+            self.say(f"mrrp! (my settings file had a typo in {', '.join(bad)}, so I used the default)", 7)
+        else:
+            self.say("mrrp! hi :3", 3)
         self.set_state("wave", 2.6)
         self.loop()
 
@@ -605,7 +741,7 @@ class Cat:
 
     # ---------------- setup helpers
     def apply_size(self):
-        self.s = SIZES.get(self.settings["size"], 1.0)
+        self.s = SIZES.get(self.settings["size"], 1.0) * UI_SCALE
         self.W, self.H = int(280 * self.s), int(230 * self.s)
         self.font = ImageFont.truetype("segoeuib.ttf", int(13 * self.s * SS))
         self.zfont = ImageFont.truetype("segoeuib.ttf", int(12 * self.s * SS))
@@ -679,9 +815,13 @@ class Cat:
         return f'"{pyw if os.path.exists(pyw) else sys.executable}" "{os.path.abspath(__file__)}"'
 
     def starts_with_windows(self):
+        """Is she in the Run key? If the .exe or script it points at has moved, point it here."""
         try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
-                winreg.QueryValueEx(k, "Charles Chocolate")
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
+                                winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE) as k:
+                cmd, _ = winreg.QueryValueEx(k, "Charles Chocolate")
+                if not all(os.path.exists(path) for path in str(cmd).split('"')[1::2]):
+                    winreg.SetValueEx(k, "Charles Chocolate", 0, winreg.REG_SZ, self.startup_command())
             return True
         except OSError:
             return False
@@ -699,6 +839,23 @@ class Cat:
             self.startup_var.set(self.starts_with_windows())
             self.say("hm, Windows said no", 2)
 
+    def screen_under(self):
+        """Work area of the monitor her feet are on."""
+        return work_area(self.x + self.W / 2, self.y + self.H - FOOT * self.s)
+
+    def check_screen(self):
+        """Resolution changes, docking, a moved taskbar: keep her on a real floor."""
+        if self.state in HANG_STATES or self.state in ("held", "fall", "mission_go", "mission_prep"):
+            return
+        wa = self.screen_under()
+        if wa == self.wa:
+            return
+        self.wa = wa
+        self.x = min(max(self.x, wa[0]), wa[2] - self.W)
+        self.y = min(self.y, self.floor())
+        self.vy = 0
+        self.set_state("fall")
+
     def floor(self):
         return self.wa[3] - self.H + int((FOOT - 6) * self.s)
 
@@ -707,6 +864,8 @@ class Cat:
         self.bubble_until = time.time() + secs
 
     def set_state(self, s, secs=None):
+        if s != "butterfly":
+            self.bf = None  # an interrupted chase shouldn't leave her head tilted up
         self.state = s
         self.state_until = time.time() + (secs if secs is not None else 9999)
 
@@ -749,6 +908,7 @@ class Cat:
         self.drag = None
         if moved:
             self.vy = 0
+            self.wa = self.screen_under()  # dropped on another monitor: land on its floor
             self.set_state("fall")
         else:
             self.poke()
@@ -821,7 +981,7 @@ class Cat:
 
     # ---------------- reels logic (runs once per tick)
     def track_reels(self, dt):
-        hwnd = self.watcher.hwnd
+        hwnd, is_browser, sure = self.watcher.seen
         if hwnd and (self.testing or self.watcher.scrolling()):
             self.reels_secs += dt
             self.away_secs = 0
@@ -832,12 +992,12 @@ class Cat:
                 self.warned = False
                 self.unblock()
 
-        if self.watcher.block_hwnd and time.time() - self.watcher.blocked_at < 0.2 and \
+        if self.watcher.blocking and time.time() - self.watcher.blocked_at < 0.2 and \
                 time.time() > self.bubble_until and not self.state.startswith("mission"):
             self.say(random.choice(["nope.", "no more scrolling.", "I said no.", "*sits on scroll wheel*"]), 2)
             self.set_state("angry", 1.5)
 
-        if self.state.startswith("mission") or self.state == "held" or self.watcher.block_hwnd:
+        if self.state.startswith("mission") or self.state == "held" or self.watcher.blocking:
             return
         warn_at = self.warn_at()
         if not self.warned and warn_at is not None and self.reels_secs >= warn_at and hwnd:
@@ -846,9 +1006,9 @@ class Cat:
             self.say(f"{left} more seconds..." if left < 60 else
                      "one more minute of reels..." if left == 60 else f"{left // 60} more minutes of reels...", 4)
         if self.reels_secs >= self.limit() and hwnd:
-            self.intervene(hwnd)
+            self.intervene(hwnd, is_browser, sure)
 
-    def intervene(self, hwnd):
+    def intervene(self, hwnd, is_browser, sure):
         action = "close" if self.testing else self.settings["action"]
         if action == "nag":
             self.reels_secs = 0
@@ -857,14 +1017,16 @@ class Cat:
             self.set_state("angry", 3)
         elif action == "block":
             self.block(hwnd, "that's enough. no more scrolling.")
-        elif self.watcher.is_browser and not self.watcher.sure:
+        elif is_browser and not sure:
             # Couldn't read the address bar, so we can't tell which tab is reels.
             self.cant_close(hwnd)
         else:
-            self.start_mission(hwnd, self.watcher.is_browser)
+            self.start_mission(hwnd, is_browser)
 
     def block(self, hwnd, line):
-        self.watcher.block_hwnd = hwnd
+        """Swallow scrolling in every reels window (not just this one, or a new window
+        would get around it) until you've been away from reels for a while."""
+        self.watcher.blocking = True
         self.testing = False
         self.say(line, 4)
         l, t, r, b = window_rect(hwnd)
@@ -872,7 +1034,7 @@ class Cat:
         self.walk_to(min(max((l + r) / 2 - self.W / 2, lo), hi), speed=7, state="storm")
 
     def unblock(self):
-        self.watcher.block_hwnd = None
+        self.watcher.blocking = False
 
     def cant_close(self, hwnd):
         """Graceful failure: never guess. Block scrolling there instead and say why."""
@@ -887,7 +1049,6 @@ class Cat:
 
     def start_mission(self, hwnd, is_browser):
         self.mission_hwnd, self.mission_browser = hwnd, is_browser
-        self.mission_btn = None
         self.job = self.watcher.submit(self.watcher.find_tab, hwnd) if is_browser else None
         self.say("okay. that's enough reels.", 3)
         self.set_state("mission_prep", 3.5)
@@ -901,7 +1062,6 @@ class Cat:
         self.job = None
         if found:
             px, py = found["x"], found["y"]
-            self.mission_btn = found["button"]
         elif self.mission_browser:
             self.cant_close(hwnd)
             return
@@ -918,7 +1078,7 @@ class Cat:
 
     def still_reels(self):
         hwnd = self.mission_hwnd
-        return bool(hwnd) and self.watcher.hwnd == hwnd and user32.IsWindow(hwnd)
+        return bool(hwnd) and self.watcher.seen[0] == hwnd and user32.IsWindow(hwnd)
 
     def close_target(self):
         """Swat landed: close just that tab (or the reels app)."""
@@ -931,8 +1091,13 @@ class Cat:
             return
         self.testing = False
         if self.mission_browser:
-            self.job = self.watcher.submit(self.watcher.close_tab, hwnd, self.mission_btn)
-            self.set_state("mission_closing", 6)
+            self.job = self.watcher.submit(self.watcher.close_tab, hwnd)
+            self.set_state("mission_closing", 8)
+            return
+        if window_exe(hwnd) in BROWSERS:  # never close a whole browser window
+            self.watcher.blocking = True
+            self.land_msg = "I couldn't close it safely, so no more scrolling there instead."
+            self.set_state("mission_letgo", 0.5)
             return
         user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
         self.land_msg = random.choice(DONE_LINES)
@@ -940,8 +1105,8 @@ class Cat:
 
     def end_mission(self):
         self.mission_hwnd = None
-        self.mission_btn = None
         self.vy = 0
+        self.wa = self.screen_under()  # the tab may have been on another monitor
         self.set_state("fall")
 
     # ---------------- behaviour
@@ -1019,7 +1184,7 @@ class Cat:
                 elif result == "gone":
                     self.land_msg = "oh, you stopped? ...good."
                 else:  # couldn't verify the tab, so nothing was closed
-                    self.watcher.block_hwnd = self.mission_hwnd
+                    self.watcher.blocking = True
                     self.land_msg = "I couldn't close it safely, so no more scrolling there instead."
                 self.set_state("mission_letgo", 0.5)
         elif st == "mission_letgo" and now > self.state_until:
@@ -1039,6 +1204,9 @@ class Cat:
                 else:
                     self.set_state("idle", random.uniform(3, 6))
                     self.say(self.land_msg or "hmph.", 4 if self.land_msg else 1.5)
+                    lo, hi = self.wa[0], self.wa[2] - self.W
+                    if not lo <= self.x <= hi:  # dropped half off the screen: come back on
+                        self.walk_to(min(max(self.x, lo), hi))
                 self.land_msg = None
 
         elif st == "dizzy":
@@ -1440,12 +1608,29 @@ class Cat:
         dt = now - self.last_tick
         self.last_tick = now
         self.t += dt
+        if now > self.screen_check_at:
+            self.screen_check_at = now + 1
+            self.check_screen()
         self.track_reels(dt)
         self.check_petting()
         self.update(dt)
         self.present(self.render())
-        self.root.after(33, self.loop)
+        self.root.after(self.frame_ms(), self.loop)
+
+    def frame_ms(self):
+        """30fps while anything's happening; drawing is the expensive part, so she
+        breathes and naps at a lower rate when nobody's near her."""
+        if self.state not in ("idle", "sleep"):
+            return 33
+        cx, cy = cursor_pos()
+        if self.x - 40 < cx < self.x + self.W + 40 and self.y - 40 < cy < self.y + self.H + 40:
+            return 33  # she's watching your cursor, or being petted
+        return 100 if self.state == "sleep" else 66
 
 
 if __name__ == "__main__":
+    # One Charles at a time (opening her again while she's already running does nothing).
+    _mutex = kernel32.CreateMutexW(None, False, "Local\\CharlesChocolateTheCharlesTheIInd")
+    if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+        sys.exit(0)
     Cat().root.mainloop()

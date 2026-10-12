@@ -47,11 +47,11 @@ Right-click her → **Reels rules**:
 |---|---|---|
 | Time limit | 2, 5, 10, 15 or 30 minutes | 5 minutes |
 | Warning | 30 seconds, 1 minute or 2 minutes before, or no warning | 1 minute before |
-| When time's up | **Close the tab**, **Block scrolling** (she sits by the window and swallows scroll-wheel and arrow / Page keys there until you've been away for a minute) or **Just tell me off** | Close the tab |
+| When time's up | **Close the tab**, **Block scrolling** (she sits by the window and swallows scroll-wheel and arrow / Page keys in every reels window until you've been away for a minute) or **Just tell me off** | Close the tab |
 
 Settings are saved to `desk_cat_settings.json` next to `desk_cat.py`, or
 `%APPDATA%\Charles Chocolate\settings.json` for the .exe. You can edit the file for
-any value the menu doesn't offer (e.g. `"limit_minutes": 7`).
+any value the menu doesn't offer (e.g. `"limit_minutes": 7`). If something in it doesn't make sense, she uses the default for that setting and tells you which one when she starts.
 
 #### She never guesses
 
@@ -69,10 +69,10 @@ the program itself is TikTok or Instagram, never because some other window's tit
 
 Fine print:
 
-- Only time spent **actively scrolling** counts (mouse wheel or arrow keys, at least once every 45 seconds).
+- Only time spent **actively scrolling** counts (mouse wheel over the reels, or arrow / Page / Space / J / K keys in it, at least once every 45 seconds).
 - A break of more than a minute resets the timer.
 - She watches the focused window *and* whatever window is under your mouse, so screen recorders stealing focus won't fool her.
-- Works in Chrome, Edge, Brave, Firefox, Opera, Vivaldi, Arc and Zen, plus the TikTok / Instagram desktop apps.
+- Works in Chrome, Edge, Brave, Firefox, Opera, Vivaldi, Arc, Zen, Chromium, Thorium, LibreWolf, Waterfox and Floorp, plus the TikTok / Instagram desktop apps.
 
 ## Install
 
@@ -143,7 +143,7 @@ Charles watches what you're looking at, so here is exactly what she does with it
 |---|---|---|
 | The title and program name of the focused window, and of the window under your mouse | To tell if it's a browser or the TikTok / Instagram app | Once a second |
 | The address bar text of that browser window | To tell if it's a reels page | Once a second, browsers only |
-| *That* you scrolled (mouse wheel, ↑ / ↓ keys), not where or what | Only *active* scrolling counts towards the limit | As it happens |
+| *That* you scrolled (mouse wheel, ↑ ↓ Page Space J K keys) in a reels window, not where or what | Only *active* scrolling counts towards the limit | As it happens |
 | The browser's tab strip | To find the reels tab's close button | Only at the moment she intervenes |
 | Your cursor position | So her eyes can follow it, and for petting | Every frame |
 
@@ -162,8 +162,9 @@ rights. She uses:
   and press the tab's close button.
 - **Low-level mouse and keyboard hooks**, to notice scrolling and, in block mode, to stop it.
   Like any keyboard hook, Windows passes every key press through it. Hers ignores everything
-  except the scroll keys (↑ ↓ Page Up / Down, Home, End), and only *swallows* those when
-  you've chosen **Block scrolling** and the reels window is in front. She never records,
+  except the keys that move a reels feed (↑ ↓ Page Up / Down, Home, End, Space, J, K), and only
+  while a reels window is in front. She only *swallows* the scroll keys (not Space, J or K), and
+  only when you've chosen **Block scrolling**. She never records,
   stores or sends what you type.
 - **A simulated Ctrl+W**, only as a fallback when the close button can't be pressed directly,
   and only after re-confirming the reels window is in front and still on reels.
@@ -189,7 +190,7 @@ over a pretend browser.
 
 ## License
 
-[MIT](LICENSE). Windows releases are code-signed through the SignPath Foundation: free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+[MIT](LICENSE). Code signing for Windows releases is being set up through the SignPath Foundation (free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org)). Until the first signed release is out, the .exe is unsigned.
 
 ## Why "the IInd"?
 

@@ -32,7 +32,8 @@ clock = [0.0]
 cursor = [600.0, 360.0]
 dc.time = types.SimpleNamespace(time=lambda: clock[0], sleep=lambda s: None)
 dc.cursor_pos = lambda: (int(cursor[0]), int(cursor[1]))
-dc.ReelsWatcher = lambda: types.SimpleNamespace(block_hwnd=None)   # no hooks, no UI Automation
+dc.ReelsWatcher = lambda: types.SimpleNamespace(blocking=False)   # no hooks, no UI Automation
+dc.UI_SCALE, dc.SS = 1.0, 3            # same size and smoothness whatever the display scaling here
 dc.Cat.loop = lambda self: None
 dc.Cat.save_settings = lambda self: None
 random.seed(7)
