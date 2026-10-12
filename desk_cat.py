@@ -40,7 +40,7 @@ except ImportError:
     auto = None
 
 # ---------------------------------------------------------------- settings
-VERSION = "1.2.1"  # bump with every release; the release workflow checks it matches the tag
+VERSION = "1.2.2"  # bump with every release; the release workflow checks it matches the tag
 REPO = "yad2thisyazm/charles-chocolate-the-charles-the-2nd"
 TEST_MODE = "--test" in sys.argv
 TEST_LIMIT = 20       # "Test the reels mission": 20s of reels open, scrolling or not
@@ -75,7 +75,7 @@ COATS = {
     "Cream": ("#f2dcb8", "#3a2f26", "#f0a4a8"),
     "Blue (grey-blue)": ("#9aa7b8", "#232833", "#efb0b8"),
 }
-SIZES = {"Small": 0.75, "Medium": 1.0, "Large": 1.3}
+SIZES = {"Small": 0.5, "Medium": 0.7, "Large": 0.9}
 LIMITS = {"2 minutes": 2, "5 minutes": 5, "10 minutes": 10, "15 minutes": 15, "30 minutes": 30}
 WARNINGS = {"30 seconds before": 30, "1 minute before": 60, "2 minutes before": 120, "No warning": 0}
 ACTIONS = {"Close the tab": "close", "Block scrolling": "block", "Just tell me off": "nag"}
@@ -1083,9 +1083,10 @@ class Cat:
 
     # ---------------- setup helpers
     def apply_size(self):
-        self.s = SIZES.get(self.settings["size"], 1.0) * UI_SCALE
+        self.s = SIZES.get(self.settings["size"], SIZES["Medium"]) * UI_SCALE
         self.W, self.H = int(280 * self.s), int(230 * self.s)
-        self.font = ImageFont.truetype("segoeuib.ttf", int(13 * self.s * SS))
+        # bubble text shrinks with her, but not past what's comfortable to read
+        self.font = ImageFont.truetype("segoeuib.ttf", int(max(13 * self.s, 10 * UI_SCALE) * SS))
         self.zfont = ImageFont.truetype("segoeuib.ttf", int(12 * self.s * SS))
         self.surface.resize(self.W, self.H)
         self.root.geometry(f"{self.W}x{self.H}")
