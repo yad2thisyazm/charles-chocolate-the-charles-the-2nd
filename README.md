@@ -102,6 +102,8 @@ Charles is **Windows only** (10 or 11).
 3. The first time, she shows you a short tour, with buttons to put her icon on your desktop
    and to start her with Windows. (Right-click her → **How I work** to see it again.)
 
+<p align="center"><img src="docs/img/tour.png" width="720" alt="Two pages of her first-run tour: 'hi, I'm Charles!' with her waving, and 'make yourself at home' with buttons for a desktop icon, starting with Windows and checking for updates"></p>
+
 The .exe isn't code-signed, so Windows SmartScreen may say *"Windows protected your PC"*.
 Click **More info → Run anyway**. If you'd rather not trust a binary, build it yourself
 (below) or run from source.

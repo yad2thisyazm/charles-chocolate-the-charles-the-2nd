@@ -40,7 +40,7 @@ except ImportError:
     auto = None
 
 # ---------------------------------------------------------------- settings
-VERSION = "1.2.0"  # bump with every release; the release workflow checks it matches the tag
+VERSION = "1.2.1"  # bump with every release; the release workflow checks it matches the tag
 REPO = "yad2thisyazm/charles-chocolate-the-charles-the-2nd"
 TEST_MODE = "--test" in sys.argv
 TEST_LIMIT = 20       # "Test the reels mission": 20s of reels open, scrolling or not
@@ -2262,8 +2262,11 @@ class Welcome:
             if on:
                 d.rounded_rectangle(self.box(cx - pw / 2, py - 14, cx + pw / 2, py + 14), radius=14 * self.k,
                                     fill=self.MINT)
-                d.text((cx * self.k, py * self.k), "✓ " + on_label, font=self.font(13, "semi"),
-                       fill="#2f6b4c", anchor="mm")
+                f = self.font(13, "semi")
+                tx = cx + 8 - d.textlength(on_label, font=f) / self.k / 2  # label, after a drawn tick
+                d.line(self.box(tx - 17, py, tx - 13, py + 4, tx - 6, py - 4), fill="#2f6b4c",
+                       width=max(1, int(2.2 * self.k)), joint="curve")
+                d.text((tx * self.k, py * self.k), on_label, font=f, fill="#2f6b4c", anchor="lm")
             else:
                 d.rounded_rectangle(self.box(cx - pw / 2, py - 14, cx + pw / 2, py + 14), radius=14 * self.k,
                                     fill=self.CHOC if hot else None, outline=self.CHOC,
