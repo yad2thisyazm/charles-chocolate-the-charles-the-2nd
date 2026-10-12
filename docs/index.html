@@ -402,7 +402,7 @@
       </div>
       <div class="knob">
         <h3>🐾 When time's up</h3>
-        <p>Close the tab, block scrolling in that window until you take a break, or just tell you off.</p>
+        <p>Close the tab, block scrolling on reels until you take a break, or just tell you off.</p>
         <div class="chips"><span class="on">close</span><span>block</span><span>nag</span></div>
       </div>
     </div>
@@ -410,10 +410,11 @@
 
     <div class="promise">
       <h3>She never guesses</h3>
-      <p>Before she swats, she checks the address bar really says reels, that the tab she's aiming at is
-        the selected one and matches that page, and then checks the address bar <i>again</i> right before
-        pressing close. If she can't be sure, she closes nothing: she tells you she couldn't find the
-        reels tab safely and blocks scrolling there instead.</p>
+      <p>Before she swats, she checks the address bar really says reels (the exact site and page, not just
+        the word), that the tab she's aiming at is the selected one and matches that page, and then finds
+        the tab <i>again</i> right before pressing its close button, in case you switched tabs. If she can't
+        be sure, she closes nothing: she tells you she couldn't find the reels tab safely and blocks
+        scrolling instead.</p>
     </div>
   </div>
 </section>
@@ -474,7 +475,8 @@
       <div class="step"><div class="n">1</div><div>
         <h3>Get her</h3>
         <p><a href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/releases/latest/download/Charles.exe"><b>Download Charles.exe</b></a> and double-click it. She appears in the bottom
-          right of your screen and says hi.</p>
+          right of your screen, says hi, and shows you a quick tour, where you can put her on your desktop,
+          start her with Windows and let her check for updates.</p>
         <p class="small-print">Windows releases are code-signed for free through the SignPath Foundation
           (see the <a href="#signing">code signing policy</a>). Until the first signed release is out, Windows may say
           <i>"Windows protected your PC"</i>: click <b>More info → Run anyway</b>. Rather build her yourself? It's all on
@@ -483,7 +485,7 @@
       <div class="step"><div class="n">2</div><div>
         <h3>Make it your rule</h3>
         <p>Right-click her → <b>Reels rules</b> to pick the time limit, the warning and what she does.
-          Tick <b>Start with Windows</b> to have her every morning.</p>
+          Everything from the tour is in there too.</p>
       </div></div>
       <div class="step"><div class="n">3</div><div>
         <h3>Test the Reels Rule</h3>
@@ -545,8 +547,10 @@ pythonw desk_cat.py</code></pre>
         <ul>
           <li><b>No admin rights.</b> She runs as you.</li>
           <li><b>Windows UI Automation</b>, the accessibility API screen readers use, to read the address bar and press close.</li>
-          <li><b>Mouse &amp; keyboard hooks</b> to notice scrolling. She ignores every key except the scroll keys, and never records what you type.</li>
+          <li><b>Mouse &amp; keyboard hooks</b> to notice scrolling. She ignores every key except the ones that move a reels feed (arrows, Page, Home, End, Space, J, K), only while reels is in front, and never records what you type.</li>
           <li><b>One startup entry</b> in the registry, only if you tick <i>Start with Windows</i>.</li>
+          <li><b>A desktop icon</b>, only if you ask for one.</li>
+          <li><b>One trip to GitHub a day</b> to look for a newer her, only if you turn on <i>Check for updates</i>.</li>
         </ul>
       </div>
     </div>
@@ -567,9 +571,10 @@ pythonw desk_cat.py</code></pre>
       <details><summary>What happened to Charles the Ist?</summary><p>Knocked a full glass of water onto a keyboard, looked directly at the camera, and quietly abdicated.</p></details>
       <details><summary>Is she made of chocolate?</summary><p>No. Please do not eat Charles.</p></details>
       <details><summary>Does she spy on me?</summary><p>She reads your browser's address bar to see if it's a reels page, and that's it. Nothing ever leaves your computer. She's a cat, not a data broker. <a href="#privacy">Here's everything she looks at.</a></p></details>
-      <details><summary>Which sites count as reels?</summary><p>Instagram Reels, YouTube Shorts, TikTok and Facebook Reels, in Chrome, Edge, Brave, Firefox, Opera, Vivaldi, Arc or Zen, plus the TikTok and Instagram desktop apps.</p></details>
+      <details><summary>Which sites count as reels?</summary><p>Instagram Reels, YouTube Shorts, TikTok and Facebook Reels, in Chrome, Edge, Brave, Firefox, Opera, Vivaldi, Arc, Zen, Chromium, Thorium, LibreWolf, Waterfox or Floorp, plus the TikTok and Instagram desktop apps.</p></details>
       <details><summary>I just had the reel open, I wasn't scrolling. Does that count?</summary><p>Nope. Only active scrolling counts, and taking a break of over a minute resets the timer. She's strict, not unreasonable.</p></details>
-      <details><summary>What if she can't tell which tab is reels?</summary><p>Then she doesn't close anything. She tells you she couldn't find it safely and blocks scrolling in that window instead. Closing the wrong tab would be far worse than closing none.</p></details>
+      <details><summary>What if she can't tell which tab is reels?</summary><p>Then she doesn't close anything. She tells you she couldn't find it safely and blocks scrolling instead. Closing the wrong tab would be far worse than closing none.</p></details>
+      <details><summary>How do I update her?</summary><p>Turn on <b>Check for updates</b> (in her tour, or right-click her) and she'll tell you when there's a new version, then fetch it and swap herself over when you say so. Or download the new <code>Charles.exe</code> and open it: the old Charles steps aside. Either way your coat, size and rules stay put.</p></details>
       <details><summary>Five minutes is too strict / not strict enough.</summary><p>Right-click → <b>Reels rules</b>. Pick 2 to 30 minutes, how much warning you get, and whether she closes the tab, blocks scrolling or just tells you off.</p></details>
       <details><summary>Can I make her stop?</summary><p>Right-click → <b>Bye Charles</b>. She'll forgive you. Eventually.</p></details>
     </div>

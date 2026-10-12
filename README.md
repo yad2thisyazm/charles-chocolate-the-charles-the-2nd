@@ -58,14 +58,21 @@ any value the menu doesn't offer (e.g. `"limit_minutes": 7`). If something in it
 Closing the wrong tab would be worse than closing none, so before she touches anything she
 checks that:
 
-- the browser's address bar really shows a reels URL (a page *titled* "reels" isn't enough),
+- the browser's address bar really shows a reels address: the exact site and path, so
+  `instagram.com/reelsofindia` or a Google search for "tiktok.com" don't count, and a page
+  merely *titled* "reels" isn't enough,
 - the tab she's about to swat is the selected tab **and** its name matches the reels page,
-- the address bar *still* shows reels right before she presses close.
+- right before she presses, she finds that tab again (in case you switched tabs while she was
+  running over) and checks the address bar *still* shows reels,
+- the button she presses is the tab's **Close** button, not the mute button next to it. If she
+  can't tell which is which, she uses <kbd>Ctrl</kbd>+<kbd>W</kbd> instead, and never while
+  you're holding a key (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd> would close the whole window).
 
 If any of that can't be confirmed (an unusual browser, a page that won't expose its tabs,
 UI Automation unavailable), she **doesn't close anything**. She tells you she couldn't find the
-reels tab safely and blocks scrolling in that window instead. Desktop apps are only closed if
-the program itself is TikTok or Instagram, never because some other window's title mentions them.
+reels tab safely and blocks scrolling in every reels window instead. Desktop apps are only closed
+if the program itself is TikTok or Instagram, never because some other window's title mentions
+them, and she never closes a whole browser window.
 
 Fine print:
 
@@ -73,6 +80,16 @@ Fine print:
 - A break of more than a minute resets the timer.
 - She watches the focused window *and* whatever window is under your mouse, so screen recorders stealing focus won't fool her.
 - Works in Chrome, Edge, Brave, Firefox, Opera, Vivaldi, Arc, Zen, Chromium, Thorium, LibreWolf, Waterfox and Floorp, plus the TikTok / Instagram desktop apps.
+
+#### Known limits
+
+- **The TikTok and Instagram apps from the Microsoft Store** may run inside Edge on newer Windows.
+  If so, she can't tell them from a browser window with no address bar, so instead of closing
+  them she blocks scrolling.
+- **Fullscreen (F11) and installed web apps** hide the address bar. She falls back to the window
+  title, which catches Reels and TikTok but often misses Shorts. She never closes anything she
+  found this way, only blocks scrolling.
+- **Touchscreen swipes** and clicking the on-screen next/previous arrows don't count as scrolling.
 
 ## Install
 
@@ -166,10 +183,12 @@ Charles watches what you're looking at, so here is exactly what she does with it
 | *That* you scrolled (mouse wheel, ↑ ↓ Page Space J K keys) in a reels window, not where or what | Only *active* scrolling counts towards the limit | As it happens |
 | The browser's tab strip | To find the reels tab's close button | Only at the moment she intervenes |
 | Your cursor position | So her eyes can follow it, and for petting | Every frame |
+| GitHub's latest release number | To tell you about a newer Charles | Once a day, only if you turn on **Check for updates** (off by default) |
 
 **What she keeps:** a reels timer in memory, reset when you take a break or quit. She never
 stores URLs, titles or history. The only thing written to disk is her settings file (coat,
-size, reels rules). The `uiautomation` library may write an `@AutomationLog.txt` next to her
+size, reels rules, and whether you've seen her tour and turned on update checks), plus, while
+updating, the new .exe next to the old one. The `uiautomation` library may write an `@AutomationLog.txt` next to her
 with technical errors only.
 
 **What leaves your computer:** nothing. No analytics, no telemetry. The only network
@@ -191,7 +210,8 @@ rights. She uses:
   only when you've chosen **Block scrolling**. She never records,
   stores or sends what you type.
 - **A simulated Ctrl+W**, only as a fallback when the close button can't be pressed directly,
-  and only after re-confirming the reels window is in front and still on reels.
+  only after re-confirming the reels window is in front and still on reels, and never while
+  you're holding a key.
 - **One registry value** (`HKCU\...\CurrentVersion\Run\Charles Chocolate`), only if you tick
   **Start with Windows**. Untick it to remove it.
 - **A desktop shortcut**, only if you ask for one (in her first-run tour, or right-click →
