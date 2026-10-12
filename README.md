@@ -187,6 +187,10 @@ close anything (see [She never guesses](#she-never-guesses)).
 The demo GIF is made by `tools/make_demo.py`, which drives her real code on a virtual clock
 over a pretend browser.
 
+## License
+
+[MIT](LICENSE). Windows releases are code-signed through the SignPath Foundation: free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
 ## Why "the IInd"?
 
 Charles the Ist knocked a full glass of water onto a keyboard and quietly abdicated.

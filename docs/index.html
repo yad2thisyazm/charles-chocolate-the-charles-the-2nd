@@ -475,8 +475,9 @@
         <h3>Get her</h3>
         <p><a href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/releases/latest/download/Charles.exe"><b>Download Charles.exe</b></a> and double-click it. She appears in the bottom
           right of your screen and says hi.</p>
-        <p class="small-print">She isn't code-signed yet, so Windows may say <i>"Windows protected your PC"</i>.
-          Click <b>More info → Run anyway</b>. Rather build her yourself? It's all on
+        <p class="small-print">Windows releases are code-signed for free through the SignPath Foundation
+          (see the <a href="#signing">code signing policy</a>). Until the first signed release is out, Windows may say
+          <i>"Windows protected your PC"</i>: click <b>More info → Run anyway</b>. Rather build her yourself? It's all on
           <a href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd">GitHub</a>.</p>
       </div></div>
       <div class="step"><div class="n">2</div><div>
@@ -497,6 +498,19 @@ cd charles-chocolate-the-charles-the-2nd
 pip install -r requirements.txt
 pythonw desk_cat.py</code></pre>
       <p style="margin-top:12px">She runs on Pillow (for drawing) and uiautomation (for reading your address bar).</p>
+    </details>
+    <details id="signing" style="max-width:760px; margin:14px auto 0">
+      <summary>Code signing policy</summary>
+      <p>Free code signing provided by <a href="https://signpath.io">SignPath.io</a>, certificate by
+        <a href="https://signpath.org">SignPath Foundation</a>.</p>
+      <p>Only <code>Charles.exe</code> files built by this project's
+        <a href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/blob/main/.github/workflows/release.yml">GitHub Actions release workflow</a>
+        from the public source code are signed. Every release is approved by hand before it's signed.</p>
+      <p><b>Committers and reviewers:</b> <a href="https://github.com/yad2thisyazm">yad2thisyazm</a><br>
+        <b>Approvers:</b> <a href="https://github.com/yad2thisyazm">yad2thisyazm</a></p>
+      <p><b>Privacy:</b> see <a href="#privacy">What she watches</a>. This program will not transfer any
+        information to other networked systems unless specifically requested by the user or the person
+        installing or operating it.</p>
     </details>
   </div>
 </section>
@@ -535,6 +549,9 @@ pythonw desk_cat.py</code></pre>
         </ul>
       </div>
     </div>
+    <p class="small-print" style="text-align:center"><b>Privacy policy:</b> Charles collects no personal data.
+      This program will not transfer any information to other networked systems unless specifically
+      requested by the user or the person installing or operating it.</p>
     <p class="small-print" style="text-align:center">The full details are in the
       <a href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd#privacy">README</a>,
       and she's one Python file, so you can check every word.</p>
@@ -630,6 +647,14 @@ pythonw desk_cat.py</code></pre>
       setTimeout(function () { p.remove(); }, 1200);
     });
   })();
+
+  // links to a collapsed section (e.g. #signing) open it
+  function openHash() {
+    var el = location.hash && document.querySelector(location.hash);
+    if (el && el.tagName === 'DETAILS') el.open = true;
+  }
+  window.addEventListener('hashchange', openHash);
+  openHash();
 
   // wardrobe: clicking a coat makes it do a happy wiggle
   document.querySelectorAll('.coat').forEach(function (c) {
