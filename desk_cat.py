@@ -14,8 +14,10 @@ Run:   pythonw desk_cat.py          (no console window)
 Test:  python desk_cat.py --test    (limit drops to 20 seconds)
 """
 
+import array
 import ctypes
 import hashlib
+import io
 import json
 import math
 import os
@@ -27,8 +29,10 @@ import threading
 import time
 import tkinter as tk
 import urllib.request
+import wave
 import webbrowser
 import winreg
+import winsound
 from ctypes import wintypes
 from urllib.parse import urlsplit
 
@@ -40,7 +44,7 @@ except ImportError:
     auto = None
 
 # ---------------------------------------------------------------- settings
-VERSION = "1.3.0"  # bump with every release; the release workflow checks it matches the tag
+VERSION = "1.3.1"  # bump with every release; the release workflow checks it matches the tag
 REPO = "yad2thisyazm/charles-chocolate-the-charles-the-2nd"
 TEST_MODE = "--test" in sys.argv
 TEST_LIMIT = 20       # "Test the reels mission": 20s of reels open, scrolling or not
@@ -91,7 +95,8 @@ WARNINGS = {"30 seconds before": 30, "1 minute before": 60, "2 minutes before": 
 ACTIONS = {"Close the tab": "close", "Block scrolling": "block", "Just tell me off": "nag"}
 DEFAULTS = {"coat": "Mochi (white)", "skin": "cat", "size": "Medium",
             "limit_minutes": 5, "warning_seconds": 60, "action": "close", "welcomed": False,
-            "check_updates": None}  # None: never asked, so it's off
+            "check_updates": None,  # None: never asked, so it's off
+            "sounds": True}
 APP_NAME = "Charles Chocolate the Charles the 2nd"  # what the desktop icon is called
 
 # Settings live next to the script when run from source; in %APPDATA% for the packaged
@@ -918,6 +923,43 @@ def sticker(text, font, fill, edge, width, angle):
     return img.rotate(angle, resample=Image.BICUBIC, expand=True)
 
 
+def tiny_woof(pitch=1.0, rate=22050):
+    """A very small, soft "woof" as WAV bytes: a little pitch swoop through a few
+    rounded-off harmonics, quick to start and quick to fade. Made here, so no sound files."""
+    n = int(0.16 * rate)
+    out, ph, lp = array.array("h"), 0.0, 0.0
+    rnd = random.Random(int(pitch * 1000))
+    for i in range(n):
+        u = i / n
+        # "w" rising into "oo", then dropping away for the "f"
+        f = 560 * pitch * (0.82 + 0.38 * math.sin(math.pi * min(1.0, u * 1.7)) - 0.25 * u)
+        ph += 2 * math.pi * f / rate
+        v = math.sin(ph) + 0.5 * math.sin(2 * ph) + 0.25 * math.sin(3 * ph) + 0.12 * math.sin(4 * ph)
+        v += (rnd.random() - 0.5) * 0.6 * max(0.0, 1 - u * 8)  # a puff of breath at the start
+        env = min(1.0, i / (0.008 * rate)) * (1 - u) ** 1.8
+        lp += (v * env - lp) * 0.35  # soften it
+        out.append(int(lp * 0.12 * 32767))  # and keep it quiet
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(out.tobytes())
+    return buf.getvalue()
+
+
+WOOF_SOUNDS = []  # made the first time he barks
+
+
+def play_woof():
+    if not WOOF_SOUNDS:
+        WOOF_SOUNDS.extend(tiny_woof(p) for p in (0.92, 1.0, 1.1))
+    snd = random.choice(WOOF_SOUNDS)
+    # PlaySound can't play from memory in the background, so give it its own thread
+    threading.Thread(target=lambda: winsound.PlaySound(snd, winsound.SND_MEMORY | winsound.SND_NODEFAULT),
+                     daemon=True).start()
+
+
 def heart(d, x, y, s, fill):
     d.ellipse((x - s, y - s, x, y), fill=fill)
     d.ellipse((x, y - s, x + s, y), fill=fill)
@@ -1013,7 +1055,7 @@ def load_settings():
     for key, value in saved.items():
         if key in choices:
             ok = isinstance(value, str) and value in choices[key]
-        elif key == "welcomed":
+        elif key in ("welcomed", "sounds"):
             ok = isinstance(value, bool)
         elif key == "check_updates":
             ok = value is None or isinstance(value, bool)
@@ -1161,6 +1203,8 @@ class Cat:
         self.startup_var = tk.BooleanVar(value=in_startup())
         self.menu.add_checkbutton(label="Start with Windows", variable=self.startup_var,
                                   command=self.toggle_startup)
+        self.sounds_var = tk.BooleanVar(value=self.settings["sounds"])
+        self.menu.add_checkbutton(label="Woof sounds", variable=self.sounds_var, command=self.toggle_sounds)
         self.desktop_var = tk.BooleanVar(value=has_desktop_icon())
         self.menu.add_checkbutton(label="Desktop icon", variable=self.desktop_var,
                                   command=self.toggle_desktop_icon)
@@ -1222,6 +1266,13 @@ class Cat:
         else:
             self.say("hm, Windows said no", 2)
         self.startup_var.set(in_startup())
+
+    def toggle_sounds(self):
+        self.settings["sounds"] = self.sounds_var.get()
+        self.save_settings()
+        if self.settings["sounds"] and self.dog:
+            self.bark()
+        self.say("woof! (quietly)" if self.settings["sounds"] else "ok, silent woofs only.", 2)
 
     def toggle_desktop_icon(self, on=None):
         on = self.desktop_var.get() if on is None else on
@@ -1388,6 +1439,11 @@ class Cat:
         now = time.time()
         self.bark_t0 = now
         self.sq = -0.16
+        if self.settings["sounds"]:
+            try:
+                play_woof()
+            except Exception:
+                pass  # no sound device: the stickers still work
         for i in range(1 if random.random() < 0.55 else 2):
             fill, edge = random.choice(WOOF_COLS)
             side = random.choice((1, -1)) if i == 0 else -self.woofs[-1]["side"]

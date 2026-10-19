@@ -157,17 +157,18 @@ Pushing a `v*` tag runs the same build on GitHub Actions and attaches `Charles.e
 | Wiggle your cursor gently over her | Purrs, hearts |
 | Left-click | Gets offended |
 | Left-click 5 times quickly | Leaves |
-| Left-click the puppy | *Woof!* (a little bark, and woof stickers pop off him) |
+| Left-click the puppy | *Woof!* (a very small woof, a little bark, and woof stickers pop off him) |
 | Left-click the puppy 5 times quickly | Zoomies |
 | Drag | Dangles, then drops back onto the taskbar |
 | Drag and shake | Dizzy |
-| Right-click | Menu: reels timer, reels rules, skin, coat, size, start with Windows, desktop icon, how I work, test mission, quit |
+| Right-click | Menu: reels timer, reels rules, skin, coat, size, woof sounds, start with Windows, desktop icon, how I work, test mission, quit |
 
 **Coats:** Mochi (white), Ash (grey), Midnight (black), Ginger, Cream, Blue, Chocolate.
 
 **Skins:** Kitty, or Puppy (right-click → **Skin**): floppy ears, a wagging tail, a little
 tongue when he's happy. Poke the puppy and he goes *woof!* instead of getting cross; poke
-him five times and he gets the zoomies. Every coat works on both.
+him five times and he gets the zoomies. Every coat works on both. His woof is tiny and quiet;
+turn it off with right-click → **Woof sounds**.
 
 <p align="center"><img src="docs/img/puppy.png" width="200" alt="Charles as a puppy, sitting"><img src="docs/img/puppy-woof.png" width="200" alt="Puppy Charles barking, with a pink woof! sticker"><img src="docs/img/puppy-zoomies.png" width="200" alt="Puppy Charles running with the zoomies"></p>
 
