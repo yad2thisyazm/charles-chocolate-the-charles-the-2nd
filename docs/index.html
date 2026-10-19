@@ -197,7 +197,7 @@
   .pcard p { font-size: 16px; margin: 6px 0 0; }
 
   /* ---------- wardrobe */
-  .coats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 20px; }
+  .coats { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 18px; }
   .coat { background: var(--card); border: 3px solid var(--choc); border-radius: 22px; padding: 10px 10px 14px; text-align: center; box-shadow: var(--shadow); cursor: pointer; transition: transform .2s; }
   .coat:hover { transform: translateY(-6px) rotate(var(--tilt, 2deg)); }
   .coat img { width: 100%; display: block; }
@@ -307,8 +307,8 @@
 </header>
 
 <div class="marquee" aria-hidden="true"><div>
-  <span>she naps</span>✦<span>she kneads</span>✦<span>she judges you</span>✦<span>she closes your reels</span>✦<span>she chases butterflies (badly)</span>✦<span>she does not like being poked</span>✦<span>mrrp</span>✦
-  <span>she naps</span>✦<span>she kneads</span>✦<span>she judges you</span>✦<span>she closes your reels</span>✦<span>she chases butterflies (badly)</span>✦<span>she does not like being poked</span>✦<span>mrrp</span>✦
+  <span>she naps</span>✦<span>she kneads</span>✦<span>she judges you</span>✦<span>she closes your reels</span>✦<span>she chases butterflies (badly)</span>✦<span>she does not like being poked</span>✦<span>sometimes she's a puppy</span>✦<span>mrrp</span>✦
+  <span>she naps</span>✦<span>she kneads</span>✦<span>she judges you</span>✦<span>she closes your reels</span>✦<span>she chases butterflies (badly)</span>✦<span>she does not like being poked</span>✦<span>sometimes she's a puppy</span>✦<span>mrrp</span>✦
 </div></div>
 
 <main>
@@ -423,7 +423,7 @@
   <div class="wrap">
     <div class="sec-head">
       <h2>Her wardrobe</h2>
-      <p>Six coats, three sizes. Right-click her to change. She looks good in all of them and she knows it.</p>
+      <p>Seven coats, three sizes, two species. Right-click her to change. She looks good in all of them and she knows it.</p>
     </div>
     <div class="coats" id="coats">
       <div class="coat" style="--tilt:-3deg"><img src="img/coat-mochi.png" alt="Mochi, white coat" loading="lazy"><b>Mochi</b><small>classic white</small></div>
@@ -432,6 +432,36 @@
       <div class="coat" style="--tilt:2deg"><img src="img/coat-ginger.png" alt="Ginger coat" loading="lazy"><b>Ginger</b><small>one brain cell</small></div>
       <div class="coat" style="--tilt:-3deg"><img src="img/coat-cream.png" alt="Cream coat" loading="lazy"><b>Cream</b><small>a latte, basically</small></div>
       <div class="coat" style="--tilt:3deg"><img src="img/coat-blue.png" alt="Blue-grey coat" loading="lazy"><b>Blue</b><small>fancy & aware of it</small></div>
+      <div class="coat" style="--tilt:-2deg"><img src="img/coat-chocolate.png" alt="Chocolate, brown coat" loading="lazy"><b>Chocolate</b><small>it's in the name</small></div>
+    </div>
+  </div>
+</section>
+
+<section id="puppy" style="background: var(--sky-2, #e3efff); border-block: 3px solid var(--choc);">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Puppy mode</h2>
+      <p>Right-click her → <b>Skin</b> → <b>Puppy</b>, and Charles becomes a very good boy. Same Charles, same Reels Rule, floppier ears.</p>
+    </div>
+    <div class="handling">
+      <div class="care">
+        <img src="img/puppy-woof.png" alt="Puppy Charles barking, with a pink woof! sticker popping off him" loading="lazy">
+        <h3>Pokes</h3>
+        <p>He doesn't mind being poked one bit. He does a bouncy little bark and a <i>woof!</i> pops off him.</p>
+        <span class="verdict yes">✔ he loves it</span>
+      </div>
+      <div class="care">
+        <img src="img/puppy-zoomies.png" alt="Puppy Charles running across the screen with speed lines" loading="lazy">
+        <h3>Zoomies</h3>
+        <p>Poke him five times quickly and he gets the zoomies: ears back, tongue out, straight across your screen.</p>
+        <span class="verdict meh">~ unstoppable</span>
+      </div>
+      <div class="care">
+        <img src="img/puppy-happy.png" alt="Chocolate puppy Charles, happy, with his tongue out and hearts" loading="lazy">
+        <h3>Scritches</h3>
+        <p>Wiggle your cursor over him. His tail goes at full speed and his tongue comes out.</p>
+        <span class="verdict yes">✔ required daily</span>
+      </div>
     </div>
   </div>
 </section>
@@ -540,7 +570,7 @@ pythonw desk_cat.py</code></pre>
         <p>No analytics, no telemetry. The only connection she ever makes is a once-a-day update check with
           GitHub, and only if you turn on <i>Check for updates</i>. Off, she never goes online. She keeps a reels
           timer in memory and never stores URLs, titles or history. The only file she writes is her
-          settings (coat, size, reels rules).</p>
+          settings (skin, coat, size, reels rules).</p>
       </div>
       <div class="pcard">
         <h3>🔑 What she needs</h3>
@@ -569,6 +599,7 @@ pythonw desk_cat.py</code></pre>
     <div class="faq">
       <details><summary>Why is she called Charles?</summary><p>She chose it. We don't ask questions.</p></details>
       <details><summary>What happened to Charles the Ist?</summary><p>Knocked a full glass of water onto a keyboard, looked directly at the camera, and quietly abdicated.</p></details>
+      <details><summary>Can Charles be a dog?</summary><p>Yes! Right-click → <b>Skin</b> → <b>Puppy</b>. He woofs when you poke him, wags when you pet him, and still closes your reels. Switch back to <b>Kitty</b> any time.</p></details>
       <details><summary>Is she made of chocolate?</summary><p>No. Please do not eat Charles.</p></details>
       <details><summary>Does she spy on me?</summary><p>She reads your browser's address bar to see if it's a reels page, and that's it. Nothing ever leaves your computer. She's a cat, not a data broker. <a href="#privacy">Here's everything she looks at.</a></p></details>
       <details><summary>Which sites count as reels?</summary><p>Instagram Reels, YouTube Shorts, TikTok and Facebook Reels, in Chrome, Edge, Brave, Firefox, Opera, Vivaldi, Arc, Zen, Chromium, Thorium, LibreWolf, Waterfox or Floorp, plus the TikTok and Instagram desktop apps.</p></details>

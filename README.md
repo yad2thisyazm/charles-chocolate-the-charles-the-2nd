@@ -157,13 +157,20 @@ Pushing a `v*` tag runs the same build on GitHub Actions and attaches `Charles.e
 | Wiggle your cursor gently over her | Purrs, hearts |
 | Left-click | Gets offended |
 | Left-click 5 times quickly | Leaves |
+| Left-click the puppy | *Woof!* (a little bark, and woof stickers pop off him) |
+| Left-click the puppy 5 times quickly | Zoomies |
 | Drag | Dangles, then drops back onto the taskbar |
 | Drag and shake | Dizzy |
 | Right-click | Menu: reels timer, reels rules, skin, coat, size, start with Windows, desktop icon, how I work, test mission, quit |
 
 **Coats:** Mochi (white), Ash (grey), Midnight (black), Ginger, Cream, Blue, Chocolate.
 
-**Skins:** Kitty, or Puppy: floppy ears and a wagging tail. Poke the puppy and he goes *woof!* instead of getting cross; poke him five times and he gets the zoomies.
+**Skins:** Kitty, or Puppy (right-click → **Skin**): floppy ears, a wagging tail, a little
+tongue when he's happy. Poke the puppy and he goes *woof!* instead of getting cross; poke
+him five times and he gets the zoomies. Every coat works on both.
+
+<p align="center"><img src="docs/img/puppy.png" width="200" alt="Charles as a puppy, sitting"><img src="docs/img/puppy-woof.png" width="200" alt="Puppy Charles barking, with a pink woof! sticker"><img src="docs/img/puppy-zoomies.png" width="200" alt="Puppy Charles running with the zoomies"></p>
+
 **Sizes:** Small, Medium, Large. Your choices are saved with the rest of her settings.
 
 ### Testing the Reels Rule
@@ -190,8 +197,8 @@ Charles watches what you're looking at, so here is exactly what she does with it
 | GitHub's latest release number | To tell you about a newer Charles | Once a day, only if you turn on **Check for updates** (off by default) |
 
 **What she keeps:** a reels timer in memory, reset when you take a break or quit. She never
-stores URLs, titles or history. The only thing written to disk is her settings file (coat,
-size, reels rules, and whether you've seen her tour and turned on update checks), plus, while
+stores URLs, titles or history. The only thing written to disk is her settings file (skin,
+coat, size, reels rules, and whether you've seen her tour and turned on update checks), plus, while
 updating, the new .exe next to the old one. The `uiautomation` library may write an `@AutomationLog.txt` next to her
 with technical errors only.
 
