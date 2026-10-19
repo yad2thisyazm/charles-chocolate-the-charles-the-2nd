@@ -40,7 +40,7 @@ except ImportError:
     auto = None
 
 # ---------------------------------------------------------------- settings
-VERSION = "1.2.2"  # bump with every release; the release workflow checks it matches the tag
+VERSION = "1.3.0"  # bump with every release; the release workflow checks it matches the tag
 REPO = "yad2thisyazm/charles-chocolate-the-charles-the-2nd"
 TEST_MODE = "--test" in sys.argv
 TEST_LIMIT = 20       # "Test the reels mission": 20s of reels open, scrolling or not
@@ -62,6 +62,14 @@ KNEAD_LINES = ["*makes biscuits*", "knead knead", "prrrp"]
 WAVE_LINES = ["hi!! :3", "oh hi!", "hewwo", "*waves*"]
 BUTTERFLY_LINES = ["!!", "a butterfly!!", "must... catch..."]
 DONE_LINES = ["go touch grass :3", "you're welcome.", "drink some water!", "there. much better."]
+# as a puppy he says these instead
+DOG_LINES = {"poke": ["hehe!", "*boop*", "again! again!", "that tickles!", "*happy tail wag*"],
+             "idle": ["arf?", "...", "*tilts head*", "*sniff sniff*", "boof"],
+             "pet": ["*tail wag intensifies*", "good boy? me??", "more scritches pls", "hehe :3"],
+             "knead": ["*digs a hole*", "dig dig dig", "I'm burying a treat"]}
+WOOFS = ["woof!", "arf!", "bork!", "wof!", "yip!", "woof woof!"]
+WOOF_COLS = [("#ff9cc2", "#c2477a"), ("#ffd35c", "#c27d12"), ("#8fd0ff", "#2f78b8"),
+             ("#a8e6a1", "#3c8a4f"), ("#c9a8ff", "#6a46b8")]  # (fill, outline)
 HANG_STATES = ("mission_jump", "mission_hang", "mission_swipe", "mission_closing", "mission_letgo")
 PAW = (80, -118)  # where her swatting paw is, in cat-local units, while hanging
 FOOT = 26         # gap under her feet inside the window, so dangling legs fit
@@ -74,12 +82,14 @@ COATS = {
     "Ginger": ("#f1b47a", "#3a2a20", "#f0939b"),
     "Cream": ("#f2dcb8", "#3a2f26", "#f0a4a8"),
     "Blue (grey-blue)": ("#9aa7b8", "#232833", "#efb0b8"),
+    "Chocolate": ("#9a6748", "#2a1c15", "#f2a0a6"),
 }
+SKINS = {"Kitty": "cat", "Puppy": "dog"}
 SIZES = {"Small": 0.5, "Medium": 0.7, "Large": 0.9}
 LIMITS = {"2 minutes": 2, "5 minutes": 5, "10 minutes": 10, "15 minutes": 15, "30 minutes": 30}
 WARNINGS = {"30 seconds before": 30, "1 minute before": 60, "2 minutes before": 120, "No warning": 0}
 ACTIONS = {"Close the tab": "close", "Block scrolling": "block", "Just tell me off": "nag"}
-DEFAULTS = {"coat": "Mochi (white)", "size": "Medium",
+DEFAULTS = {"coat": "Mochi (white)", "skin": "cat", "size": "Medium",
             "limit_minutes": 5, "warning_seconds": 60, "action": "close", "welcomed": False,
             "check_updates": None}  # None: never asked, so it's off
 APP_NAME = "Charles Chocolate the Charles the 2nd"  # what the desktop icon is called
@@ -798,6 +808,8 @@ class Painter:
         self.kx = self.ky = 1.0   # squash & stretch around her feet
         self.twitch = 0.0         # flicks the far ear
         self.ear_at = None
+        self.dog = False          # floppy ears, drawn on top afterwards by dog_ears()
+        self.flop = 0.0           # how far the floppy ears swing (negative: flying up)
 
     def p(self, x, y):
         return self.cx + x * self.f * self.k * self.kx, self.gy + y * self.k * self.ky
@@ -850,11 +862,28 @@ class Painter:
 
     def ears(self, hx, hy, tilt=0.0):
         self.ear_at = (hx, hy, tilt)
+        if self.dog:
+            return
         for tri in self.ear_tris(hx, hy, tilt):
             self.rpoly(tri, 4.5)
 
-    def inner_ears(self, fill):
+    def dog_ears(self, fill, rim):
+        """Two soft floppy ears hanging over the sides of his head."""
         if not self.ear_at:
+            return
+        hx, hy, tilt = self.ear_at
+        fl, tw = self.flop, self.twitch
+        ears = ([(hx - 4, hy - 25), (hx - 18 - tilt, hy - 21), (hx - 22 - fl * 0.3, hy + fl)],
+                [(hx + 27, hy - 19), (hx + 38 + tilt + tw * 0.4, hy - 15), (hx + 41 + fl * 0.3, hy + fl)])
+        col, g = self.col, self.g
+        for self.g, self.col in ((1.2, rim), (0.0, fill)):
+            for path in ears:
+                self.tube(path, 5.5)
+                self.ellipse(path[-1][0], path[-1][1] + 2, 7.5, 9.5)
+        self.col, self.g = col, g
+
+    def inner_ears(self, fill):
+        if not self.ear_at or self.dog:
             return
         col, self.col = self.col, fill
         for tri in self.ear_tris(*self.ear_at):
@@ -877,6 +906,16 @@ def butterfly(d, x, y, s, flap, col):
         d.ellipse((x + dx * w * 0.8 - w * 0.4, y - s * 0.05, x + dx * w * 0.8 + w * 0.4, y + s * 0.75),
                   fill=col)
     d.line((x, y - s * 0.8, x, y + s * 0.7), fill="#5a4a55", width=max(1, int(s * 0.28)))
+
+
+def sticker(text, font, fill, edge, width, angle):
+    """A word with a chunky outline and a white sticker edge, tilted a little: one "woof!"."""
+    l, t, r, b = font.getbbox(text, stroke_width=width * 2)
+    img = Image.new("RGBA", (r - l + 4, b - t + 4), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.text((2 - l, 2 - t), text, font=font, fill="#ffffff", stroke_width=width * 2, stroke_fill="#ffffff")
+    d.text((2 - l, 2 - t), text, font=font, fill=fill, stroke_width=width, stroke_fill=edge)
+    return img.rotate(angle, resample=Image.BICUBIC, expand=True)
 
 
 def heart(d, x, y, s, fill):
@@ -969,7 +1008,7 @@ def load_settings():
         return settings, ["the whole file"]
     if not isinstance(saved, dict):
         return settings, ["the whole file"]
-    choices = {"coat": COATS, "size": SIZES, "action": ACTIONS.values()}
+    choices = {"coat": COATS, "skin": SKINS.values(), "size": SIZES, "action": ACTIONS.values()}
     ranges = {"limit_minutes": (1, 24 * 60), "warning_seconds": (0, 24 * 60 * 60)}
     for key, value in saved.items():
         if key in choices:
@@ -1080,6 +1119,9 @@ class Cat:
         self.hop_t0, self.hop_n, self.hop_y = 0.0, 0, 0.0
         self.bf = None                    # butterfly she's watching
         self.paw_tip = None
+        self.bark_t0 = 0.0                # puppy: when he last went "woof"
+        self.bark_lift = 0.0              # ...and how far his head bobs up for it
+        self.woofs = []                   # the "woof!" stickers floating off him
 
     # ---------------- setup helpers
     def apply_size(self):
@@ -1088,6 +1130,10 @@ class Cat:
         # bubble text shrinks with her, but not past what's comfortable to read
         self.font = ImageFont.truetype("segoeuib.ttf", int(max(13 * self.s, 10 * UI_SCALE) * SS))
         self.zfont = ImageFont.truetype("segoeuib.ttf", int(12 * self.s * SS))
+        try:
+            self.wfont = ImageFont.truetype("segoeprb.ttf", int(max(17 * self.s, 12 * UI_SCALE) * SS))
+        except OSError:
+            self.wfont = ImageFont.truetype("segoeuib.ttf", int(max(17 * self.s, 12 * UI_SCALE) * SS))
         self.surface.resize(self.W, self.H)
         self.root.geometry(f"{self.W}x{self.H}")
 
@@ -1095,7 +1141,7 @@ class Cat:
         self.menu = tk.Menu(self.root, tearoff=0)
         self.menu.add_command(label="Reels timer: 0:00", state="disabled")
         self.vars = {key: tk.StringVar(value=str(self.settings[key]))
-                     for key in ("coat", "size", "limit_minutes", "warning_seconds", "action")}
+                     for key in ("coat", "skin", "size", "limit_minutes", "warning_seconds", "action")}
 
         def submenu(key, options, cmd):
             sub = tk.Menu(self.menu, tearoff=0)
@@ -1109,6 +1155,7 @@ class Cat:
         rules.add_cascade(label="Warning", menu=submenu("warning_seconds", WARNINGS, self.set_rule))
         rules.add_cascade(label="When time's up", menu=submenu("action", ACTIONS, self.set_rule))
         self.menu.add_cascade(label="Reels rules", menu=rules)
+        self.menu.add_cascade(label="Skin", menu=submenu("skin", SKINS, self.set_look))
         self.menu.add_cascade(label="Coat", menu=submenu("coat", {n: n for n in COATS}, self.set_look))
         self.menu.add_cascade(label="Size", menu=submenu("size", {n: n for n in SIZES}, self.set_look))
         self.startup_var = tk.BooleanVar(value=in_startup())
@@ -1135,7 +1182,21 @@ class Cat:
             self.apply_size()
             self.y = bottom - self.H
         self.save_settings()
-        self.say("how do I look?", 2)
+        if key == "skin" and self.dog:
+            self.woofs = []
+            self.bark()
+            self.say("woof! I'm a puppy now :3", 2.5)
+        elif key == "skin":
+            self.say("mrrp. back to being a cat.", 2.5)
+        else:
+            self.say("how do I look?", 2)
+
+    @property
+    def dog(self):
+        return self.settings["skin"] == "dog"
+
+    def line(self, kind, cat_lines):
+        return random.choice(DOG_LINES[kind] if self.dog else cat_lines)
 
     def set_rule(self, key):
         val = self.vars[key].get()
@@ -1301,27 +1362,56 @@ class Cat:
         self.pet = 0
         if len(self.pokes) >= 5:
             self.pokes = []
-            self.say("that's it. I'm leaving.", 2.5)
             mid = (self.wa[0] + self.wa[2]) / 2
             far = self.wa[0] + 40 if self.x > mid else self.wa[2] - self.W - 40
+            if self.dog:  # too much fun: he gets the zoomies
+                self.bark()
+                self.say("ZOOMIES!!!", 2.5)
+                self.walk_to(far, speed=9, state="zoomies")
+                return
+            self.say("that's it. I'm leaving.", 2.5)
             self.walk_to(far, speed=7, state="storm")
+            return
+        if self.dog:
+            if self.state == "sleep":
+                self.pose = "sit"
+                self.say("huh?! *woof*", 2)
+            elif random.random() < 0.5:
+                self.say(self.line("poke", POKE_LINES), 1.8)
+            self.bark()
             return
         self.say("!!! who woke me" if self.state == "sleep" else random.choice(POKE_LINES), 2)
         self.set_state("angry", 2.2)
+
+    def bark(self):
+        """Puppy poke: a little hop-bark, and a "woof!" (or two) pops off him."""
+        now = time.time()
+        self.bark_t0 = now
+        self.sq = -0.16
+        for i in range(1 if random.random() < 0.55 else 2):
+            fill, edge = random.choice(WOOF_COLS)
+            side = random.choice((1, -1)) if i == 0 else -self.woofs[-1]["side"]
+            ang = math.radians(random.uniform(10, 35) if side > 0 else random.uniform(25, 60)) * side
+            self.woofs.append({"t0": now + i * 0.12, "dir": (math.sin(ang), -math.cos(ang)), "side": side,
+                               "img": sticker(random.choice(WOOFS), self.wfont, fill, edge,
+                                              max(2, int(1.6 * self.s * SS)), -side * random.uniform(6, 16))})
+        self.woofs = self.woofs[-6:]
+        if self.state != "zoomies":
+            self.set_state("bark", 1.1)
 
     def check_petting(self):
         cx, cy = cursor_pos()
         moved = math.dist((cx, cy), self.last_cursor)
         self.last_cursor = (cx, cy)
         self.pet = max(0.0, self.pet - 3)
-        if self.state not in ("idle", "walk", "happy", "knead", "wave") or \
+        if self.state not in ("idle", "walk", "happy", "knead", "wave", "bark") or \
                 user32.GetAsyncKeyState(VK_LBUTTON) & 0x8000:
             return
         bx, by = self.x + self.W / 2, self.y + self.H - FOOT * self.s
         if abs(cx - bx) < 70 * self.s and by - 125 * self.s < cy < by and 1 < moved < 60:
             self.pet += moved
             if self.pet > 350 and self.state != "happy":
-                self.say(random.choice(PET_LINES), 2.5)
+                self.say(self.line("pet", PET_LINES), 2.5)
                 self.set_state("happy", 2.5)
             elif self.state == "happy":
                 self.state_until = time.time() + 1.5
@@ -1497,7 +1587,7 @@ class Cat:
         st = self.state
         self.spin *= 0.93
 
-        if st in ("walk", "storm", "mission_go"):
+        if st in ("walk", "storm", "mission_go", "zoomies"):
             tx, ty = self.target
             dx, dy = tx - self.x, ty - self.y
             dist = math.hypot(dx, dy)
@@ -1510,6 +1600,10 @@ class Cat:
                     self.jump_t0 = now
                     self.jump_dur = 0.45 + math.dist(self.jump_from, self.hang_pos) / 2600
                     self.set_state("mission_jump")
+                elif st == "zoomies":
+                    self.pose = "stand"
+                    self.set_state("happy", 2.5)
+                    self.say("hehe. again? :3", 2.5)
                 elif st == "storm":
                     self.pose = "sit"
                     self.set_state("angry", 3)
@@ -1588,7 +1682,7 @@ class Cat:
                 self.set_state("idle", 4)
                 self.say("...what happened?", 2.5)
 
-        elif st in ("angry", "happy") and now > self.state_until:
+        elif st in ("angry", "happy", "bark") and now > self.state_until:
             self.set_state("idle", random.uniform(3, 6))
 
         elif st == "sleep" and now > self.state_until:
@@ -1637,7 +1731,7 @@ class Cat:
             elif r < 0.71:
                 self.pose = "sit"
                 self.set_state("knead", random.uniform(4, 7))
-                self.say(random.choice(KNEAD_LINES), 2.5)
+                self.say(self.line("knead", KNEAD_LINES), 2.5)
             elif r < 0.8:
                 self.pose = "sit"
                 self.bf = {"t0": now, "swat": random.uniform(3.5, 5), "swatted": False,
@@ -1654,7 +1748,7 @@ class Cat:
                 self.say(random.choice(WAVE_LINES), 2)
                 self.set_state("wave", 2.2)
             else:
-                self.say(random.choice(IDLE_LINES), 2)
+                self.say(self.line("idle", IDLE_LINES), 2)
                 self.set_state("idle", random.uniform(4, 8))
 
         if now > self.blink_at + 0.14:
@@ -1683,14 +1777,20 @@ class Cat:
         if pose == "loaf":
             br = math.sin(t * 2) * 1.2
             P.rrect(-56, -46 - br, 46, 0, 23)
-            hx, hy = 34, -42 - br * 0.6
+            hx, hy = 34, -42 - br * 0.6 - self.bark_lift
             P.ellipse(hx, hy, 31, 27)
             P.ears(hx, hy, tilt=-2)
-            P.tube([(-50, -8), (-36, -1), (0, -3), (22, -6)], 7)
+            if self.dog:
+                self.dog_tail(P, pose, 0, flags)
+            else:
+                P.tube([(-50, -8), (-36, -1), (0, -3), (22, -6)], 7)
             return hx, hy
         if pose == "sit":
             sway = math.sin(t * 1.6) * 4
-            P.tube([(-30, -9), (-62, -8), (-48, -7), (-6 + sway, -7)], 7)
+            if self.dog:
+                self.dog_tail(P, pose, 0, flags)
+            else:
+                P.tube([(-30, -9), (-62, -8), (-48, -7), (-6 + sway, -7)], 7)
             P.ellipse(-16, -26, 34, 26)
             P.ellipse(4, -52, 27, 36)
             for i, lx in enumerate((10, 25)):
@@ -1700,7 +1800,7 @@ class Cat:
                 if st == "knead":
                     ey -= max(0.0, math.sin(t * 7 + i * math.pi)) * 6
                 P.tube([(lx, -40), (lx, ey)], 7.5)
-            hx, hy = 16, -98 + (3 if happy else 0)
+            hx, hy = 16, -98 + (3 if happy else 0) - self.bark_lift
             if st == "knead":
                 hy += math.sin(t * 14) * 0.8
             if self.bf:  # head up a touch, watching the butterfly
@@ -1735,6 +1835,9 @@ class Cat:
             for i in range(9):  # puffed-up fluff along the back
                 a = math.pi * (1.05 + i * 0.11)
                 P.ellipse(-8 + math.cos(a) * 46, -66 + by + math.sin(a) * 26, 7, 7)
+        if self.dog:
+            self.dog_tail(P, pose, by, flags)
+        elif angry:
             P.tube([(-54, -60 + by), (-64, -86 + by), (-62, -116 + by),
                     (-58 + math.sin(t * 30) * 1.5, -134 + by)], 11)
         elif happy:
@@ -1744,16 +1847,34 @@ class Cat:
         else:
             sway = math.sin(t * (6 if moving else 2.2)) * (6 if moving else 9)
             P.tube([(-54, -60 + by), (-76, -62 + by), (-82, -92 + by), (-70 + sway, -112 + by)], 7.5)
-        hx, hy = 40, -78 + by + (math.sin(self.phase * 2) if moving else 0)
+        hx, hy = 40, -78 + by + (math.sin(self.phase * 2) if moving else 0) - self.bark_lift
         P.ellipse(hx, hy, 33, 29)
         P.ears(hx, hy, tilt=-3 if angry else 0)
         return hx, hy
 
+    def dog_tail(self, P, pose, by, flags):
+        """A short puppy tail that wags: faster the happier he is."""
+        angry, moving, held, happy = flags
+        st, t = self.state, self.t
+        fast = happy or st in ("bark", "zoomies")
+        wag = math.sin(t * (24 if fast else 15 if moving else 5)) * (9 if fast else 5)
+        if pose == "loaf":
+            P.tube([(-48, -14), (-62, -14), (-66, -26 + wag * 0.2)], 6.5)
+        elif pose == "sit":
+            P.tube([(-34, -12), (-54, -9), (-62 + wag, -14 - abs(wag) * 0.3)], 7)
+        elif angry:  # stiff and straight up
+            P.tube([(-54, -60 + by), (-62, -82 + by), (-60 + math.sin(t * 30) * 1.5, -100 + by)], 8)
+        elif st in HANG_STATES:
+            P.tube([(-54, -60), (-66, -48), (-64 + wag, -30)], 7)
+        else:
+            P.tube([(-54, -62 + by), (-70, -70 + by), (-72 + wag, -94 + by)], 7)
+
     def render(self):
         st, t, now, s = self.state, self.t, time.time(), self.s
         fur, ink, blush = COATS.get(self.settings["coat"], COATS["Mochi (white)"])
+        dog = self.dog
         angry = st in ("angry", "storm")
-        moving = st in ("walk", "storm", "mission_go")
+        moving = st in ("walk", "storm", "mission_go", "zoomies")
         hang = st in HANG_STATES
         held = st in ("held", "fall") or hang
         fierce = angry or st == "mission_swipe"
@@ -1764,7 +1885,8 @@ class Cat:
         elif st == "hop":
             pose = "stand"
         else:
-            pose = "loaf" if st == "sleep" else "sit" if (st in ("idle", "happy") and self.pose == "sit") else "stand"
+            pose = "loaf" if st == "sleep" else "sit" if (st in ("idle", "happy", "bark") and self.pose == "sit") \
+                else "stand"
         flags = (angry, moving, held, happy)
 
         # where the butterfly is (cat-local units), and the raised paw
@@ -1789,7 +1911,7 @@ class Cat:
             self.paw_tip = (64 + math.sin(t * 11) * 6, -100 + abs(math.cos(t * 11)) * 3)
 
         # squash & stretch (springy landings, breathing)
-        breathe = math.sin(t * 2.4) * 0.012 if st in ("idle", "knead", "wave", "butterfly", "happy") else 0.0
+        breathe = math.sin(t * 2.4) * 0.012 if st in ("idle", "knead", "wave", "butterfly", "happy", "bark") else 0.0
         if st == "happy":
             breathe += math.sin(t * 40) * 0.006  # purring rumble
         sq = 0.0 if hang else self.sq + breathe
@@ -1809,16 +1931,36 @@ class Cat:
             sw = (52 if pose != "sit" else 40) * k * (1 - hop_y / 80)
             d.ellipse((cx * SS - sw, gy * SS - 5 * k, cx * SS + sw, gy * SS + 5 * k), fill=(0, 0, 0, 34))
 
+        # puppy: his head bobs up and his mouth pops open each time he woofs
+        ba = now - self.bark_t0
+        self.bark_lift = math.sin(math.pi * ba / 0.32) * 5 if dog and ba < 0.32 else 0.0
+        yap = max(0.0, 1 - ba / 0.45) if dog else 0.0
+
         # body twice: a slightly bigger, darker pass first gives her a soft rim
         P = Painter(frame, s, self.facing, cx, gy - hop_y * s)
         P.kx, P.ky = 1 - sq * 0.5, 1 + sq
         tw = now - self.twitch_t0
         P.twitch = math.sin(tw * 30) * 5 * (1 - tw / 0.35) if tw < 0.35 else 0.0
+        P.dog = dog
+        if held:  # floppy ears fly up
+            P.flop = -12 + math.sin(t * 9) * 3
+        elif st == "zoomies":
+            P.flop = -10 + math.sin(self.phase * 2) * 3
+        elif moving:
+            P.flop = math.sin(self.phase * 2) * 3
+        else:
+            P.flop = 3 if angry else math.sin(t * 1.7) * 0.8 - yap * 7
+        if st == "zoomies":  # speed lines
+            for i, ly in enumerate((-44, -60, -76)):
+                lx0 = -80 - (t * 300 + i * 37) % 30
+                P.stroke([(lx0, ly), (lx0 - 22, ly)], 2.2, (205, 205, 220, 210))
         P.g, P.col = 1.0, shade(fur, 0.8)
         self.draw_body(P, pose, flags)
         P.g, P.col = 0.0, fur
         hx, hy = self.draw_body(P, pose, flags)
         P.inner_ears(mix(fur, blush, 0.75))
+        if dog:
+            P.dog_ears(shade(fur, 0.78), shade(fur, 0.62))
 
         # pupils follow the cursor (or the butterfly) when it's close
         hpx0, hpy0 = P.p(hx, hy)
@@ -1839,6 +1981,8 @@ class Cat:
 
         # face
         ex1, ex2, ey, mx = hx + 5, hx + 23, hy + 1, hx + 14
+        if dog:  # a soft lighter muzzle
+            P.ellipse(mx, ey + 7.5, 9.5, 6.2, mix(fur, "#ffffff", 0.5))
         if pose == "loaf":
             for ex in (ex1, ex2):
                 P.arc(ex, ey - 1, 3.6, 20, 160, 1.6, ink)
@@ -1868,17 +2012,20 @@ class Cat:
         cheek = mix(fur, blush, 0.85 if (happy or held or pose == "loaf" or st == "knead") else 0.45)
         for ex in (ex1 - 5, ex2 + 5):
             P.ellipse(ex, ey + 7, 4.2, 2.5, cheek)
-        P.ellipse(mx, ey + 4.2, 2.0, 1.4, mix(blush, ink, 0.25))  # tiny nose
-        if fierce:
-            P.ellipse(mx, ey + 8.5, 2.8, 2.4, ink)
-        elif held:
-            P.ellipse(mx, ey + 8.5, 2.0, 2.4, ink)
+        if dog:
+            self.dog_mouth(P, mx, ey, yap, fierce, happy or st == "zoomies", held)
         else:
-            P.arc(mx - 2.1, ey + 6, 2.1, 10, 170, 1.4, ink)
-            P.arc(mx + 2.1, ey + 6, 2.1, 10, 170, 1.4, ink)
-        whisk = mix(fur, ink, 0.45)
-        P.stroke([(hx + 29, ey + 4), (hx + 42, ey + 1.5)], 0.8, whisk)
-        P.stroke([(hx + 29, ey + 7), (hx + 42, ey + 8.5)], 0.8, whisk)
+            P.ellipse(mx, ey + 4.2, 2.0, 1.4, mix(blush, ink, 0.25))  # tiny nose
+            if fierce:
+                P.ellipse(mx, ey + 8.5, 2.8, 2.4, ink)
+            elif held:
+                P.ellipse(mx, ey + 8.5, 2.0, 2.4, ink)
+            else:
+                P.arc(mx - 2.1, ey + 6, 2.1, 10, 170, 1.4, ink)
+                P.arc(mx + 2.1, ey + 6, 2.1, 10, 170, 1.4, ink)
+            whisk = mix(fur, ink, 0.45)
+            P.stroke([(hx + 29, ey + 4), (hx + 42, ey + 1.5)], 0.8, whisk)
+            P.stroke([(hx + 29, ey + 7), (hx + 42, ey + 8.5)], 0.8, whisk)
 
         # the raised paw goes over her cheek, with a toe bean
         if self.paw_tip:
@@ -1929,10 +2076,64 @@ class Cat:
                 d.line((px + i * 9 * k, py - 14 * k, px + i * 13 * k, py - 22 * k), fill="#e0574f",
                        width=int(2 * k))
 
+        if dog:
+            self.draw_woofs(frame, P, hx, hy, ba)
+
         if self.bubble and now < self.bubble_until:
             self.draw_bubble(d, self.bubble, hpx, hpy - 36 * k, "#2b2926")
 
         return to_bgra(frame, SS)
+
+    def dog_mouth(self, P, mx, ey, yap, fierce, tongue, held):
+        """Button nose, and a mouth that's a little "w", a woof, or a happy tongue."""
+        line, mouth, pink = "#3a2c28", "#5b2b2e", "#f28a9b"
+        P.ellipse(mx, ey + 4.6, 3.4, 2.4, "#2e2422")
+        P.ellipse(mx - 1.1, ey + 3.9, 1.1, 0.7, "#8f8280")  # shine
+        o = max(yap, 0.55 if fierce else 0.0)
+        if o > 0.05:
+            P.ellipse(mx, ey + 9.6 + o, 2.4 + 1.2 * o, 1.0 + 3.0 * o, mouth)
+            if not fierce:
+                P.ellipse(mx + 0.4, ey + 10.4 + 3 * o, 1.8 + 0.6 * o, 0.8 + 1.0 * o, pink)
+        elif tongue:
+            P.ellipse(mx, ey + 9.6, 3.2, 2.4, mouth)
+            P.ellipse(mx + 0.5, ey + 12, 2.3, 2.8, pink)
+        elif held:
+            P.ellipse(mx, ey + 9, 2.0, 2.4, mouth)
+        else:
+            P.stroke([(mx, ey + 6.4), (mx, ey + 7.8)], 1.2, line)
+            P.arc(mx - 2.3, ey + 7.4, 2.3, 10, 170, 1.4, line)
+            P.arc(mx + 2.3, ey + 7.4, 2.3, 10, 170, 1.4, line)
+
+    def draw_woofs(self, frame, P, hx, hy, ba):
+        """Little burst lines over his head, and the "woof!" stickers popping off him."""
+        ox, oy = hx + 11, hy - 6  # roughly the middle of his head
+        if ba < 0.3:
+            e = ba / 0.3
+            for a in (-0.7, 0.0, 0.7):
+                dx, dy = math.sin(a), -math.cos(a)
+                r0, r1 = 34 + e * 8, 40 + e * 12
+                P.stroke([(ox + dx * r0, oy + dy * r0), (ox + dx * r1, oy + dy * r1)], 2.2, "#e0789e")
+        now = time.time()
+        self.woofs = [wf for wf in self.woofs if now - wf["t0"] < 1.1]
+        for wf in self.woofs:
+            a = now - wf["t0"]
+            if a < 0:
+                continue
+            u = min(1.0, a / 0.22)
+            pop = 1 + 2.70158 * (u - 1) ** 3 + 1.70158 * (u - 1) ** 2  # springy pop-in
+            fade = 1.0 if a < 0.7 else max(0.0, 1 - (a - 0.7) / 0.4)
+            dist = 30 + 34 * (1 - (1 - min(1.0, a / 1.1)) ** 2)
+            dx, dy = wf["dir"]
+            px, py = P.p(ox + dx * dist, oy + dy * dist)
+            img, sc = wf["img"], max(0.1, pop)
+            if abs(sc - 1) > 0.02:
+                img = img.resize((max(1, int(img.width * sc)), max(1, int(img.height * sc))), Image.BILINEAR)
+            if fade < 1:
+                img = img.copy()
+                img.putalpha(img.getchannel("A").point(lambda v: int(v * fade)))
+            x = int(max(0, min(px - img.width / 2, frame.width - img.width)))
+            y = int(max(0, min(py - img.height / 2, frame.height - img.height)))
+            frame.alpha_composite(img, (x, y))
 
     def draw_bubble(self, d, text, ax, ay, ink):
         k = self.s * SS

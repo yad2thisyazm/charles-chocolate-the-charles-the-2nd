@@ -159,9 +159,11 @@ Pushing a `v*` tag runs the same build on GitHub Actions and attaches `Charles.e
 | Left-click 5 times quickly | Leaves |
 | Drag | Dangles, then drops back onto the taskbar |
 | Drag and shake | Dizzy |
-| Right-click | Menu: reels timer, reels rules, coat, size, start with Windows, desktop icon, how I work, test mission, quit |
+| Right-click | Menu: reels timer, reels rules, skin, coat, size, start with Windows, desktop icon, how I work, test mission, quit |
 
-**Coats:** Mochi (white), Ash (grey), Midnight (black), Ginger, Cream, Blue.
+**Coats:** Mochi (white), Ash (grey), Midnight (black), Ginger, Cream, Blue, Chocolate.
+
+**Skins:** Kitty, or Puppy: floppy ears and a wagging tail. Poke the puppy and he goes *woof!* instead of getting cross; poke him five times and he gets the zoomies.
 **Sizes:** Small, Medium, Large. Your choices are saved with the rest of her settings.
 
 ### Testing the Reels Rule
