@@ -1,0 +1,40 @@
+# Sends each release's Charles.exe to VirusTotal, so the scan link in its release notes works.
+# Needs a free VirusTotal account: put its API key in a repository secret called VT_API_KEY.
+# Runs after every release build; run it by hand (Actions -> VirusTotal -> Run workflow) to
+# send every release so far.
+name: VirusTotal
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  scan:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VT_API_KEY: ${{ secrets.VT_API_KEY }}
+    steps:
+      - name: Upload the release's Charles.exe (every release's, if run by hand)
+        run: |
+          if [ -z "$VT_API_KEY" ]; then
+            echo "::warning::No VT_API_KEY secret set, so nothing was sent to VirusTotal."
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tags=$(gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName -q '.[].tagName')
+          else
+            tags="${{ github.event.workflow_run.head_branch }}"
+          fi
+          for tag in $tags; do
+            rm -f Charles.exe
+            gh release download "$tag" -R "$GITHUB_REPOSITORY" -p Charles.exe || continue
+            echo "$tag: $(sha256sum Charles.exe | cut -d' ' -f1)"
+            curl -sSf -H "x-apikey: $VT_API_KEY" -F "file=@Charles.exe" \
+              https://www.virustotal.com/api/v3/files > /dev/null \
+              || echo "::warning::VirusTotal didn't take $tag"
+            sleep 16  # the free API allows 4 requests a minute
+          done

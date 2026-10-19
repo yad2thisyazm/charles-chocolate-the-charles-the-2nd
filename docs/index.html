@@ -222,6 +222,12 @@
   code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
   p code { background: var(--pink-2); padding: 1px 6px; border-radius: 6px; font-size: .9em; }
 
+  .heads-up { margin-top: 12px; background: var(--butter); border: 3px solid var(--choc); border-radius: 18px; padding: 14px 18px; }
+  .heads-up h4 { font: 600 19px "Fredoka"; color: var(--choc); margin: 0; }
+  .heads-up p, .heads-up ol { font-size: 15px; margin: 6px 0 0; }
+  .heads-up ol { padding-left: 22px; }
+  .heads-up li { margin-bottom: 4px; }
+
   /* ---------- faq */
   .faq { max-width: 760px; margin: 0 auto; display: grid; gap: 14px; }
   details { background: var(--card); border: 3px solid var(--choc); border-radius: 18px; padding: 4px 18px; box-shadow: var(--shadow); }
@@ -507,10 +513,23 @@
         <p><a href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/releases/latest/download/Charles.exe"><b>Download Charles.exe</b></a> and double-click it. She appears in the bottom
           right of your screen, says hi, and shows you a quick tour, where you can put her on your desktop,
           start her with Windows and let her check for updates.</p>
-        <p class="small-print">Windows releases are code-signed for free through the SignPath Foundation
-          (see the <a href="#signing">code signing policy</a>). Until the first signed release is out, Windows may say
-          <i>"Windows protected your PC"</i>: click <b>More info → Run anyway</b>. Rather build her yourself? It's all on
-          <a href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd">GitHub</a>.</p>
+        <div class="heads-up" id="windows-warning">
+          <h4>⚠️ Windows might say she's unsafe. She's not, promise.</h4>
+          <p>Windows trusts programs that are <i>code-signed</i>, and a signing certificate costs hundreds of
+            dollars a year. Charles is a free little hobby project, so she isn't signed, and Windows warns about
+            anything unsigned and new. That's all the warning means. Here's how to get past it:</p>
+          <ol>
+            <li><b>Download.</b> If your browser says the file <i>isn't commonly downloaded</i>: in Edge, click
+              <b>⋯ → Keep → Show more → Keep anyway</b>; in Chrome, click <b>Keep</b>.</li>
+            <li><b>Open Charles.exe.</b> If a blue box says <i>"Windows protected your PC"</i>, click
+              <b>More info</b>, then <b>Run anyway</b>.</li>
+            <li>That's it. Windows only asks the first time.</li>
+          </ol>
+          <p><b>Want to check it's the real file?</b> Every <a href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/releases">release</a> lists the file's
+            SHA-256 checksum and a VirusTotal scan. In PowerShell, run <code>Get-FileHash .\Charles.exe</code>
+            and check it matches. Rather build her yourself? It's all on
+            <a href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd">GitHub</a>.</p>
+        </div>
       </div></div>
       <div class="step"><div class="n">2</div><div>
         <h3>Make it your rule</h3>
@@ -530,19 +549,6 @@ cd charles-chocolate-the-charles-the-2nd
 pip install -r requirements.txt
 pythonw desk_cat.py</code></pre>
       <p style="margin-top:12px">She runs on Pillow (for drawing) and uiautomation (for reading your address bar).</p>
-    </details>
-    <details id="signing" style="max-width:760px; margin:14px auto 0">
-      <summary>Code signing policy</summary>
-      <p>Free code signing provided by <a href="https://signpath.io">SignPath.io</a>, certificate by
-        <a href="https://signpath.org">SignPath Foundation</a>.</p>
-      <p>Only <code>Charles.exe</code> files built by this project's
-        <a href="https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/blob/main/.github/workflows/release.yml">GitHub Actions release workflow</a>
-        from the public source code are signed. Every release is approved by hand before it's signed.</p>
-      <p><b>Committers and reviewers:</b> <a href="https://github.com/yad2thisyazm">yad2thisyazm</a><br>
-        <b>Approvers:</b> <a href="https://github.com/yad2thisyazm">yad2thisyazm</a></p>
-      <p><b>Privacy:</b> see <a href="#privacy">What she watches</a>. This program will not transfer any
-        information to other networked systems unless specifically requested by the user or the person
-        installing or operating it.</p>
     </details>
   </div>
 </section>
@@ -685,7 +691,7 @@ pythonw desk_cat.py</code></pre>
     });
   })();
 
-  // links to a collapsed section (e.g. #signing) open it
+  // links to a collapsed section open it
   function openHash() {
     var el = location.hash && document.querySelector(location.hash);
     if (el && el.tagName === 'DETAILS') el.open = true;

@@ -104,9 +104,27 @@ Charles is **Windows only** (10 or 11).
 
 <p align="center"><img src="docs/img/tour.png" width="720" alt="Two pages of her first-run tour: 'hi, I'm Charles!' with her waving, and 'make yourself at home' with buttons for a desktop icon, starting with Windows and checking for updates"></p>
 
-The .exe isn't code-signed, so Windows SmartScreen may say *"Windows protected your PC"*.
-Click **More info → Run anyway**. If you'd rather not trust a binary, build it yourself
-(below) or run from source.
+> [!WARNING]
+> **Windows might say Charles is unsafe. She isn't.** Windows trusts programs that are
+> *code-signed*, and a signing certificate costs hundreds of dollars a year, which is a lot for a
+> free hobby project. So the .exe is unsigned, and Windows warns about anything new and unsigned.
+> That's all the warning means.
+>
+> 1. **Download.** If your browser says the file *isn't commonly downloaded*: in Edge, click
+>    **⋯ → Keep → Show more → Keep anyway**; in Chrome, click **Keep**.
+> 2. **Open Charles.exe.** If a blue box says *"Windows protected your PC"*, click
+>    **More info**, then **Run anyway**.
+> 3. That's it. Windows only asks the first time.
+
+**Check it's the real file:** every [release](https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd/releases) lists `Charles.exe`'s SHA-256 checksum
+and a VirusTotal scan. In PowerShell, in the folder you downloaded it to:
+
+```powershell
+Get-FileHash .\Charles.exe
+```
+
+The `Hash` it prints should match the release's checksum. If you'd rather not trust a binary at
+all, build it yourself (below) or run from source.
 
 ### Updating
 
@@ -248,7 +266,7 @@ over a pretend browser.
 
 ## License
 
-[MIT](LICENSE). Code signing for Windows releases is being set up through the SignPath Foundation (free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org)). Until the first signed release is out, the .exe is unsigned.
+[MIT](LICENSE).
 
 ## Why "the IInd"?
 

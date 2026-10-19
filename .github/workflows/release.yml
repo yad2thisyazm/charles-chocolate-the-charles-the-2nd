@@ -31,8 +31,21 @@ jobs:
         with:
           name: Charles
           path: dist/Charles.exe
+      - name: Checksum, for the release notes
+        id: sum
+        shell: bash
+        run: echo "sha=$(sha256sum dist/Charles.exe | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/Charles.exe
           generate_release_notes: true
+          body: |
+            ### Check it's the real file
+            SHA-256 of `Charles.exe`: `${{ steps.sum.outputs.sha }}`
+            In PowerShell: `Get-FileHash .\Charles.exe` should print the same hash.
+            [VirusTotal scan](https://www.virustotal.com/gui/file/${{ steps.sum.outputs.sha }})
+
+            Windows may warn that Charles is unsafe: she isn't code-signed (certificates cost hundreds a year).
+            Click **More info → Run anyway**. [More about that](https://github.com/yad2thisyazm/charles-chocolate-the-charles-the-2nd#the-easy-way)
+
